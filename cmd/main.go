@@ -32,6 +32,12 @@ type Task struct {
 	Blocker           string `yaml:"blocker"`
 }
 
+// TaskWithDate represents a task with its associated date for sorting.
+type TaskWithDate struct {
+	Task
+	Date string
+}
+
 // DailyLog contains all information for a single day.
 type DailyLog struct {
 	WorkLogEntries []WorkLog `yaml:"work_log"`
@@ -156,10 +162,10 @@ func runReportCommand(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Categorize tasks - only include completed and in progress tasks
-	completedTasks := make(map[string][]Task) // Jira ticket -> list of descriptions for completed tasks
-	nextUpTasks := []Task{}                   // In progress tasks without blockers
-	blockedTasks := []Task{}                  // In progress tasks with blockers
+	// Categorize tasks with better logic
+	completedTasks := make(map[string][]TaskWithDate) // Jira ticket -> list of tasks with dates
+	nextUpTasks := make(map[string][]TaskWithDate)    // Jira ticket -> list of tasks with dates for next up
+	mostRecentTasks := make(map[string]TaskWithDate)  // Jira ticket -> most recent task (for blockers)
 
 	for _, date := range dates {
 		dailyLog, exists := workData[date]
@@ -167,17 +173,37 @@ func runReportCommand(cmd *cobra.Command, args []string) {
 			continue
 		}
 		for _, task := range dailyLog.Tasks {
-			// Only process completed and in progress tasks
-			if strings.EqualFold(task.Status, "completed") || strings.EqualFold(task.Status, "in progress") {
-				completedTasks[task.JiraTicket] = append(completedTasks[task.JiraTicket], task)
-			}
-			if strings.EqualFold(task.Status, "in progress") || strings.EqualFold(task.Status, "not started") {
-				nextUpTasks = append(nextUpTasks, task)
+			taskWithDate := TaskWithDate{Task: task, Date: date}
+
+			// Keep the original Jira ticket field (full URL)
+			jiraTicket := task.JiraTicket
+
+			// Track completed tasks - include both completed and in-progress tasks with descriptions (actual work done)
+			if strings.EqualFold(task.Status, "completed") ||
+				(strings.EqualFold(task.Status, "in progress") && task.Description != "") {
+				completedTasks[jiraTicket] = append(completedTasks[jiraTicket], taskWithDate)
 			}
 
-			if task.Blocker != "" {
-				blockedTasks = append(blockedTasks, task)
+			// Track next up tasks (in progress or not started) - focus on upnext_description for planning
+			if (strings.EqualFold(task.Status, "in progress") || strings.EqualFold(task.Status, "not started")) &&
+				task.UpnextDescription != "" {
+				nextUpTasks[jiraTicket] = append(nextUpTasks[jiraTicket], taskWithDate)
 			}
+
+			// Track most recent task per Jira ticket (for blocker logic)
+			if jiraTicket != "" {
+				if existing, exists := mostRecentTasks[jiraTicket]; !exists || date > existing.Date {
+					mostRecentTasks[jiraTicket] = taskWithDate
+				}
+			}
+		}
+	}
+
+	// Filter blocked tasks: only include tickets where the most recent task has a blocker
+	var blockedTasks []Task
+	for _, taskWithDate := range mostRecentTasks {
+		if taskWithDate.Blocker != "" {
+			blockedTasks = append(blockedTasks, taskWithDate.Task)
 		}
 	}
 
@@ -259,7 +285,7 @@ func getDatesInRange(workData WorkData, startStr, endStr string) ([]string, erro
 
 // --- Report Printing Functions ---
 
-func printCompletedTasks(out io.Writer, tasks map[string][]Task) {
+func printCompletedTasks(out io.Writer, tasks map[string][]TaskWithDate) {
 	if len(tasks) == 0 {
 		return
 	}
@@ -272,58 +298,133 @@ func printCompletedTasks(out io.Writer, tasks map[string][]Task) {
 	sort.Strings(tickets)
 
 	for _, ticket := range tickets {
-		var formattedTicket string
-		if ticket != "" {
-			formattedTicket = fmt.Sprintf("%s: ", ticket)
-			fmt.Fprintf(out, "    • %s\n", formattedTicket)
-		}
+		taskList := tasks[ticket]
 
-		for _, task := range tasks[ticket] {
-			var spacing string
-			if ticket != "" {
-				spacing = "        • "
-			} else {
-				spacing = "    • "
+		// Sort tasks chronologically (oldest to newest)
+		sort.Slice(taskList, func(i, j int) bool {
+			return taskList[i].Date < taskList[j].Date
+		})
+
+		// Group tasks by Jira ticket and consolidate
+		if ticket != "" {
+			// Print the Jira ticket header
+			fmt.Fprintf(out, "    • %s: \n", ticket)
+
+			// Collect all descriptions and unique PR links
+			var descriptions []string
+			prLinks := make(map[string]bool)
+
+			for _, taskWithDate := range taskList {
+				if taskWithDate.Description != "" {
+					descriptions = append(descriptions, taskWithDate.Description)
+				}
+				if taskWithDate.GithubPR != "" {
+					prLinks[taskWithDate.GithubPR] = true
+				}
 			}
 
-			if task.GithubPR != "" {
-				fmt.Fprintf(out, "%s%s PR: %s\n", spacing, task.Description, task.GithubPR)
-			} else {
-				fmt.Fprintf(out, "%s%s\n", spacing, task.Description)
+			// Print all descriptions
+			for _, desc := range descriptions {
+				fmt.Fprintf(out, "        ◦ %s", desc)
+				// If there are PR links, add them after the last description
+				if len(descriptions) > 0 && desc == descriptions[len(descriptions)-1] && len(prLinks) > 0 {
+					var links []string
+					for link := range prLinks {
+						links = append(links, link)
+					}
+					sort.Strings(links)
+					output := fmt.Sprintf("\n        ◦ PR(s): %s", strings.Join(links, "; "))
+					fmt.Fprint(out, output)
+				}
+				fmt.Fprintln(out)
+			}
+		} else {
+			// Handle tasks without Jira tickets
+			for _, taskWithDate := range taskList {
+				if taskWithDate.GithubPR != "" {
+					fmt.Fprintf(out, "    • %s\n", taskWithDate.Description)
+					fmt.Fprintf(out, "        ◦ PR(s): %s\n", taskWithDate.GithubPR)
+				} else {
+					fmt.Fprintf(out, "    • %s\n", taskWithDate.Description)
+				}
 			}
 		}
 	}
 }
 
-func printNextUpTasks(out io.Writer, nextUp []Task) {
+func printNextUpTasks(out io.Writer, nextUp map[string][]TaskWithDate) {
 	if len(nextUp) == 0 {
 		return
 	}
 	fmt.Fprintln(out, "\n:starfleet: Thing I plan on working on next")
-	for _, task := range nextUp {
-		if task.JiraTicket != "" {
-			fmt.Fprintf(out, "    • %s\n", task.JiraTicket)
 
-			if task.UpnextDescription != "" {
-				fmt.Fprintf(out, "        • %s\n", task.UpnextDescription)
+	// Sort tickets alphabetically
+	var tickets []string
+	for ticket := range nextUp {
+		tickets = append(tickets, ticket)
+	}
+	sort.Strings(tickets)
 
-				if task.GithubPR != "" {
-					fmt.Fprintf(out, "        • PR: %s\n", task.GithubPR)
+	for _, ticket := range tickets {
+		taskList := nextUp[ticket]
+
+		// Sort tasks chronologically (oldest to newest)
+		sort.Slice(taskList, func(i, j int) bool {
+			return taskList[i].Date < taskList[j].Date
+		})
+
+		if ticket != "" {
+			fmt.Fprintf(out, "    • %s\n", ticket)
+
+			// Collect all upnext descriptions and unique PR links
+			var descriptions []string
+			prLinks := make(map[string]bool)
+
+			for _, taskWithDate := range taskList {
+				// For next up tasks, prefer upnext_description over description
+				if taskWithDate.UpnextDescription != "" {
+					descriptions = append(descriptions, taskWithDate.UpnextDescription)
+				} else if taskWithDate.Description != "" {
+					descriptions = append(descriptions, taskWithDate.Description)
 				}
+				if taskWithDate.GithubPR != "" {
+					prLinks[taskWithDate.GithubPR] = true
+				}
+			}
+
+			// Print all descriptions
+			for _, desc := range descriptions {
+				fmt.Fprintf(out, "        ◦ %s", desc)
+				// If there are PR links, add them after the last description
+				if len(descriptions) > 0 && desc == descriptions[len(descriptions)-1] && len(prLinks) > 0 {
+					var links []string
+					for link := range prLinks {
+						links = append(links, link)
+					}
+					sort.Strings(links)
+					output := fmt.Sprintf("\n        ◦ PR(s): %s", strings.Join(links, "; "))
+					fmt.Fprint(out, output)
+				}
+				fmt.Fprintln(out)
 			}
 		} else {
-			if task.UpnextDescription != "" {
-				if task.GithubPR != "" {
-					fmt.Fprintf(out, "    • %s\n", task.UpnextDescription)
-					fmt.Fprintf(out, "        • PR: %s\n", task.GithubPR)
+			// Handle tasks without Jira tickets
+			for _, taskWithDate := range taskList {
+				var desc string
+				if taskWithDate.UpnextDescription != "" {
+					desc = taskWithDate.UpnextDescription
 				} else {
-					fmt.Fprintf(out, "    • %s\n", task.UpnextDescription)
+					desc = taskWithDate.Description
 				}
-			} else {
-				fmt.Fprintf(out, "    • %s\n", task.Description)
+
+				if taskWithDate.GithubPR != "" {
+					fmt.Fprintf(out, "    • %s\n", desc)
+					fmt.Fprintf(out, "        ◦ PR(s): %s\n", taskWithDate.GithubPR)
+				} else {
+					fmt.Fprintf(out, "    • %s\n", desc)
+				}
 			}
 		}
-
 	}
 }
 
@@ -334,6 +435,6 @@ func printBlockedTasks(out io.Writer, blocked []Task) {
 	fmt.Fprintln(out, "\n:facepalm: Thing that is blocking me or that I could use some help / discussion about")
 	for _, task := range blocked {
 		fmt.Fprintf(out, "    • %s \n", task.JiraTicket)
-		fmt.Fprintf(out, "        • Blocker: %s\n", task.Blocker)
+		fmt.Fprintf(out, "        ◦ Blocker: %s\n", task.Blocker)
 	}
 }
