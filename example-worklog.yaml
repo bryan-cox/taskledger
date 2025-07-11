@@ -7,9 +7,9 @@
     - start_time: "13:00"
       end_time: "17:30"
   tasks:
-    - description: "Implemented a new OAuth 2.0 authentication flow for user login. This included front-end and back-end changes."
+    - jira_ticket: "PROJ-1234"
+      description: "Implemented a new OAuth 2.0 authentication flow for user login. This included front-end and back-end changes."
       status: "completed" # Can be: not started, in progress, completed
-      jira_ticket: "PROJ-1234"
       blocker: ""
 
 "2024-07-27":
@@ -17,13 +17,13 @@
     - start_time: "09:00"
       end_time: "17:00"
   tasks:
-    - description: "Investigating a bug where the quarterly report fails to generate for large datasets. The issue seems to be a memory leak."
+    - jira_ticket: "PROJ-5678"
+      description: "Investigating a bug where the quarterly report fails to generate for large datasets. The issue seems to be a memory leak."
       status: "in progress"
-      jira_ticket: "PROJ-5678"
       blocker: "Waiting for access to the production database logs to replicate the issue."
-    - description: "Reviewed the pull request for the new caching mechanism. Left comments and approved the changes."
+    - jira_ticket: "PROJ-5691"
+      description: "Reviewed the pull request for the new caching mechanism. Left comments and approved the changes."
       status: "completed"
-      jira_ticket: "PROJ-5691"
       blocker: ""
 
 "2024-07-28":
@@ -31,9 +31,9 @@
     - start_time: "10:00"
       end_time: "11:30"
   tasks:
-    - description: "Review the backlog and prioritize tasks for the upcoming sprint. This will be done in the weekly planning meeting."
+    - jira_ticket: "PROJ-9101"
+      description: "Review the backlog and prioritize tasks for the upcoming sprint. This will be done in the weekly planning meeting."
       status: "not started"
-      jira_ticket: "PROJ-9101"
       blocker: ""
 
 "2024-07-25":
@@ -41,7 +41,7 @@
     - start_time: "14:00"
       end_time: "16:45"
   tasks:
-    - description: "Added new sections to the API documentation for the recently added endpoints. Also corrected some typos in existing docs."
+    - jira_ticket: "PROJ-1121"
+      description: "Added new sections to the API documentation for the recently added endpoints. Also corrected some typos in existing docs."
       status: "completed"
-      jira_ticket: "PROJ-1121"
       blocker: ""

@@ -59,9 +59,9 @@ TaskLedger reads from a `worklog.yml` file in the project root by default. You c
     - start_time: "13:00"
       end_time: "17:30"
   tasks:
-    - description: "Implemented a new OAuth 2.0 authentication flow for user login. This included front-end and back-end changes."
+    - jira_ticket: "PROJ-1234"
+      description: "Implemented a new OAuth 2.0 authentication flow for user login. This included front-end and back-end changes."
       status: "completed" # Can be: not started, in progress, completed
-      jira_ticket: "PROJ-1234"
       github_pr: "https://github.com/example/repo/pull/123"
       upnext_description: ""
       blocker: "" # Leave empty if not blocked
@@ -71,9 +71,9 @@ TaskLedger reads from a `worklog.yml` file in the project root by default. You c
     - start_time: "09:00"
       end_time: "17:00"
   tasks:
-    - description: "Investigating a bug where the quarterly report fails to generate for large datasets. The issue seems to be a memory leak."
+    - jira_ticket: "PROJ-5678"
+      description: "Investigating a bug where the quarterly report fails to generate for large datasets. The issue seems to be a memory leak."
       status: "in progress"
-      jira_ticket: "PROJ-5678"
       github_pr: ""
       upnext_description: "Continue debugging the memory leak issue"
       blocker: "Waiting for access to the production database logs to replicate the issue."
@@ -162,9 +162,9 @@ Work Report (2024-07-26 to 2024-07-27)
 
 ### Task Fields
 
+- `jira_ticket`: Jira ticket identifier or URL (now the default/first field)
 - `description`: The main description of the task (required)
 - `status`: Task status - "completed", "in progress", or "not started"
-- `jira_ticket`: Jira ticket identifier or URL
 - `github_pr`: GitHub pull request URL
 - `upnext_description`: Specific description for next up tasks
 - `blocker`: Description of what's blocking the task (if any)

@@ -21,10 +21,16 @@ func setupTests(t *testing.T) (string, func()) {
     - start_time: "13:30"
       end_time: "17:00"
   tasks:
-    - description: "Set up the Go module and initial file structure."
+    - jira_ticket: "SCR-1"
+      description: "Set up the Go module and initial file structure."
       status: "completed"
-      jira_ticket: "SCR-1"
       github_pr: ""
+      upnext_description: ""
+      blocker: ""
+    - jira_ticket: ""
+      description: "Organized project documentation and created initial README."
+      status: "completed"
+      github_pr: "https://github.com/example/repo/pull/456"
       upnext_description: ""
       blocker: ""
 "2024-08-02":
@@ -32,16 +38,22 @@ func setupTests(t *testing.T) (string, func()) {
     - start_time: "10:00"
       end_time: "16:00"
   tasks:
-    - description: "Implement the structs and parsing logic for the worklog YAML."
+    - jira_ticket: "SCR-2"
+      description: "Implement the structs and parsing logic for the worklog YAML."
       status: "in progress"
-      jira_ticket: "SCR-2"
       github_pr: ""
       upnext_description: "Continue working on YAML parsing logic"
       blocker: "Waiting on final YAML structure."
-    - description: "Provided feedback on the new database schema."
+    - jira_ticket: "PROJ-99"
+      description: "Provided feedback on the new database schema."
       status: "completed"
-      jira_ticket: "PROJ-99"
       github_pr: "https://github.com/example/repo/pull/123"
+      upnext_description: ""
+      blocker: ""
+    - jira_ticket: ""
+      description: "Updated team wiki with new development processes."
+      status: "completed"
+      github_pr: ""
       upnext_description: ""
       blocker: ""
 "2024-08-03":
@@ -49,11 +61,17 @@ func setupTests(t *testing.T) (string, func()) {
     - start_time: "11:00"
       end_time: "13:00"
   tasks:
-    - description: "Building the 'hours' and 'report' commands."
+    - jira_ticket: "SCR-3"
+      description: "Building the 'hours' and 'report' commands."
       status: "in progress"
-      jira_ticket: "SCR-3"
       github_pr: ""
       upnext_description: "Implement CLI commands for hours and reports"
+      blocker: ""
+    - jira_ticket: ""
+      description: "Fixed minor linting issues across the codebase."
+      status: "not started"
+      github_pr: ""
+      upnext_description: "Run linter and fix all warnings"
       blocker: ""
 `)
 	tmpfile, err := os.CreateTemp("", "test_worklog.*.yml")
@@ -132,7 +150,7 @@ func TestReportCommand(t *testing.T) {
 		if !strings.Contains(output, "SCR-1:") {
 			t.Error("Report missing completed Jira ticket SCR-1")
 		}
-		if !strings.Contains(output, "• Set up the Go module and initial file structure.") {
+		if !strings.Contains(output, "◦ Set up the Go module and initial file structure.") {
 			t.Error("Report missing completed task description with bullet")
 		}
 		if !strings.Contains(output, ":starfleet: Thing I plan on working on next") {
@@ -147,12 +165,26 @@ func TestReportCommand(t *testing.T) {
 		if !strings.Contains(output, "SCR-2") {
 			t.Error("Report missing blocked task ticket")
 		}
-		if !strings.Contains(output, "• Blocker: Waiting on final YAML structure.") {
+		if !strings.Contains(output, "◦ Blocker: Waiting on final YAML structure.") {
 			t.Error("Report missing blocker description with bullet")
 		}
 		// Check for GitHub PR integration
-		if !strings.Contains(output, "PR: https://github.com/example/repo/pull/123") {
+		if !strings.Contains(output, "PR(s): https://github.com/example/repo/pull/123") {
 			t.Error("Report missing GitHub PR link")
+		}
+		// Check for tasks without Jira tickets
+		if !strings.Contains(output, "• Organized project documentation and created initial README.") {
+			t.Error("Report should include completed task that has no Jira ticket")
+		}
+		if !strings.Contains(output, "• Updated team wiki with new development processes.") {
+			t.Error("Report should include completed task that has no Jira ticket")
+		}
+		if !strings.Contains(output, "• Run linter and fix all warnings") {
+			t.Error("Report should include next up task that has no Jira ticket")
+		}
+		// Check for PR links for tasks without Jira tickets
+		if !strings.Contains(output, "PR(s): https://github.com/example/repo/pull/456") {
+			t.Error("Report should include PR link for task that has no Jira ticket")
 		}
 	})
 }
