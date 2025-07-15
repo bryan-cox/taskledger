@@ -376,27 +376,32 @@ func printNextUpTasks(out io.Writer, nextUp map[string][]TaskWithDate) {
 		if ticket != "" {
 			fmt.Fprintf(out, "    • %s\n", ticket)
 
-			// Collect all upnext descriptions and unique PR links
-			var descriptions []string
+			// For next up tasks, only use the most recent entry per ticket
+			// Get the most recent task with an upnext description
+			var mostRecentDesc string
 			prLinks := make(map[string]bool)
 
-			for _, taskWithDate := range taskList {
-				// For next up tasks, prefer upnext_description over description
-				if taskWithDate.UpnextDescription != "" {
-					descriptions = append(descriptions, taskWithDate.UpnextDescription)
-				} else if taskWithDate.Description != "" {
-					descriptions = append(descriptions, taskWithDate.Description)
+			// Work backwards to find the most recent upnext description
+			for i := len(taskList) - 1; i >= 0; i-- {
+				taskWithDate := taskList[i]
+				if mostRecentDesc == "" {
+					if taskWithDate.UpnextDescription != "" {
+						mostRecentDesc = taskWithDate.UpnextDescription
+					} else if taskWithDate.Description != "" {
+						mostRecentDesc = taskWithDate.Description
+					}
 				}
+				// Collect all unique PR links
 				if taskWithDate.GithubPR != "" {
 					prLinks[taskWithDate.GithubPR] = true
 				}
 			}
 
-			// Print all descriptions
-			for _, desc := range descriptions {
-				fmt.Fprintf(out, "        ◦ %s", desc)
-				// If there are PR links, add them after the last description
-				if len(descriptions) > 0 && desc == descriptions[len(descriptions)-1] && len(prLinks) > 0 {
+			// Print the most recent description
+			if mostRecentDesc != "" {
+				fmt.Fprintf(out, "        ◦ %s", mostRecentDesc)
+				// Add PR links if any exist
+				if len(prLinks) > 0 {
 					var links []string
 					for link := range prLinks {
 						links = append(links, link)
@@ -408,8 +413,9 @@ func printNextUpTasks(out io.Writer, nextUp map[string][]TaskWithDate) {
 				fmt.Fprintln(out)
 			}
 		} else {
-			// Handle tasks without Jira tickets
-			for _, taskWithDate := range taskList {
+			// Handle tasks without Jira tickets - use most recent entry
+			if len(taskList) > 0 {
+				taskWithDate := taskList[len(taskList)-1] // Get most recent
 				var desc string
 				if taskWithDate.UpnextDescription != "" {
 					desc = taskWithDate.UpnextDescription
