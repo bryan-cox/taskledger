@@ -158,11 +158,40 @@ Work Report (2024-07-26 to 2024-07-27)
     ./bin/taskledger report --help
     ```
 
+## Important: Task Grouping Behavior
+
+**The `jira_ticket` field serves as a unique identifier for grouping related tasks.** TaskLedger tracks the progression of work items by grouping all tasks with the same `jira_ticket` value together. This is crucial for proper status tracking and report generation.
+
+### Key Points:
+
+1. **Every task should have a unique `jira_ticket` identifier** - even for non-Jira work
+2. **Tasks are grouped by `jira_ticket`** - multiple entries with the same identifier are treated as updates to the same work item
+3. **Status progression is tracked chronologically** - the most recent task entry for each `jira_ticket` determines current status
+4. **Completed tasks disappear from "next up"** - when the latest entry for a `jira_ticket` is marked "completed", it won't appear in future planning sections
+
+### Examples of Good `jira_ticket` Values:
+
+```yaml
+# Official Jira tickets
+jira_ticket: "PROJ-1234"
+jira_ticket: "https://company.atlassian.net/browse/PROJ-1234"
+
+# Custom identifiers for non-Jira work
+jira_ticket: "NO-JIRA: Update Documentation"
+jira_ticket: "ADMIN-001: Setup New Environment" 
+jira_ticket: "BUG-FIX: Login Page CSS Issue"
+jira_ticket: "RESEARCH: Evaluate New Framework"
+```
+
+### What Happens Without Unique Identifiers:
+
+If you leave `jira_ticket` empty or use the same value for unrelated tasks, TaskLedger cannot properly track task progression, and you may see completed work still appearing in "next up" sections.
+
 ## YAML Fields Reference
 
 ### Task Fields
 
-- `jira_ticket`: Jira ticket identifier or URL (now the default/first field)
+- `jira_ticket`: **Required** - Unique identifier for grouping related tasks (Jira ticket ID, URL, or custom identifier)
 - `description`: The main description of the task (required)
 - `status`: Task status - "completed", "in progress", or "not started"
 - `github_pr`: GitHub pull request URL

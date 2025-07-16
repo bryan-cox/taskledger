@@ -164,8 +164,8 @@ func runReportCommand(cmd *cobra.Command, args []string) {
 
 	// Categorize tasks with better logic
 	completedTasks := make(map[string][]TaskWithDate) // Jira ticket -> list of tasks with dates
-	nextUpTasks := make(map[string][]TaskWithDate)    // Jira ticket -> list of tasks with dates for next up
-	mostRecentTasks := make(map[string]TaskWithDate)  // Jira ticket -> most recent task (for blockers)
+	allNextUpTasks := make(map[string][]TaskWithDate) // Jira ticket -> list of tasks with next up descriptions
+	mostRecentTasks := make(map[string]TaskWithDate)  // Jira ticket -> most recent task (for blockers and filtering)
 
 	for _, date := range dates {
 		dailyLog, exists := workData[date]
@@ -184,17 +184,26 @@ func runReportCommand(cmd *cobra.Command, args []string) {
 				completedTasks[jiraTicket] = append(completedTasks[jiraTicket], taskWithDate)
 			}
 
-			// Track next up tasks (in progress or not started) - focus on upnext_description for planning
-			if (strings.EqualFold(task.Status, "in progress") || strings.EqualFold(task.Status, "not started")) &&
-				task.UpnextDescription != "" {
-				nextUpTasks[jiraTicket] = append(nextUpTasks[jiraTicket], taskWithDate)
+			// Collect all tasks with upnext descriptions (we'll filter by most recent status later)
+			if task.UpnextDescription != "" {
+				allNextUpTasks[jiraTicket] = append(allNextUpTasks[jiraTicket], taskWithDate)
 			}
 
-			// Track most recent task per Jira ticket (for blocker logic)
+			// Track most recent task per Jira ticket (for blockers and filtering)
 			if jiraTicket != "" {
 				if existing, exists := mostRecentTasks[jiraTicket]; !exists || date > existing.Date {
 					mostRecentTasks[jiraTicket] = taskWithDate
 				}
+			}
+		}
+	}
+
+	// Filter next up tasks: only include tickets where the most recent task is still in progress or not started
+	nextUpTasks := make(map[string][]TaskWithDate)
+	for jiraTicket, taskList := range allNextUpTasks {
+		if mostRecent, exists := mostRecentTasks[jiraTicket]; exists {
+			if strings.EqualFold(mostRecent.Status, "in progress") || strings.EqualFold(mostRecent.Status, "not started") {
+				nextUpTasks[jiraTicket] = taskList
 			}
 		}
 	}
