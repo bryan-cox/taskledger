@@ -5,10 +5,15 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/exec"
+	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
+	"html"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -47,6 +52,146 @@ type DailyLog struct {
 // WorkData is the top-level structure, mapping dates to daily logs.
 type WorkData map[string]DailyLog
 
+// --- JIRA Integration ---
+
+// JiraTicketInfo holds information about a JIRA ticket
+type JiraTicketInfo struct {
+	Key     string
+	Summary string
+	URL     string
+}
+
+// JiraAPIResponse represents the response from JIRA API
+type JiraAPIResponse struct {
+	Key    string `json:"key"`
+	Fields struct {
+		Summary string `json:"summary"`
+	} `json:"fields"`
+}
+
+// JIRA ticket ID regex patterns
+var (
+	jiraTicketRegex = regexp.MustCompile(`\b([A-Z]+-\d+)\b`)
+	jiraURLRegex    = regexp.MustCompile(`https://issues\.redhat\.com/browse/([A-Z]+-\d+)`)
+)
+
+// extractJiraTicketID extracts JIRA ticket ID from URL or text
+func extractJiraTicketID(input string) string {
+	// First try to extract from URL
+	if matches := jiraURLRegex.FindStringSubmatch(input); len(matches) > 1 {
+		return matches[1]
+	}
+	
+	// Then try to extract from plain text
+	if matches := jiraTicketRegex.FindStringSubmatch(input); len(matches) > 1 {
+		return matches[1]
+	}
+	
+	return ""
+}
+
+// fetchJiraTicketSummary fetches the summary of a JIRA ticket using the API
+func fetchJiraTicketSummary(ticketID string) (JiraTicketInfo, error) {
+	ticket := JiraTicketInfo{
+		Key: ticketID,
+		URL: fmt.Sprintf("https://issues.redhat.com/browse/%s", ticketID),
+	}
+
+	// Check if JIRA Personal Access Token is available
+	jiraPAT := os.Getenv("JIRA_PAT")
+	if jiraPAT == "" {
+		// Return ticket info without summary if no PAT is available
+		return ticket, nil
+	}
+
+	// Make API request to fetch ticket summary
+	apiURL := fmt.Sprintf("https://issues.redhat.com/rest/api/2/issue/%s?fields=summary", ticketID)
+	
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return ticket, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set authorization header
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", jiraPAT))
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ticket, fmt.Errorf("failed to fetch ticket: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return ticket, fmt.Errorf("JIRA API returned status %d", resp.StatusCode)
+	}
+
+	var jiraResp JiraAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&jiraResp); err != nil {
+		return ticket, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	ticket.Summary = jiraResp.Fields.Summary
+	return ticket, nil
+}
+
+// processJiraTickets processes a map of JIRA tickets and fetches their summaries
+func processJiraTickets(tickets map[string][]TaskWithDate) map[string]JiraTicketInfo {
+	jiraInfo := make(map[string]JiraTicketInfo)
+	
+	for ticketReference := range tickets {
+		if ticketReference == "" {
+			continue
+		}
+		
+		ticketID := extractJiraTicketID(ticketReference)
+		if ticketID == "" {
+			continue
+		}
+		
+		if _, exists := jiraInfo[ticketID]; !exists {
+			// Fetch ticket info (will include summary only if JIRA_PAT is available)
+			if info, err := fetchJiraTicketSummary(ticketID); err == nil {
+				jiraInfo[ticketID] = info
+			} else {
+				// If fetch fails, still create basic info
+				jiraInfo[ticketID] = JiraTicketInfo{
+					Key: ticketID,
+					URL: fmt.Sprintf("https://issues.redhat.com/browse/%s", ticketID),
+				}
+				slog.Warn("failed to fetch JIRA ticket summary", "ticket", ticketID, "error", err)
+			}
+		}
+	}
+	
+	return jiraInfo
+}
+
+// formatJiraTicketHTML formats a JIRA ticket reference as HTML with optional summary
+func formatJiraTicketHTML(ticketReference string, jiraInfo map[string]JiraTicketInfo) string {
+	ticketID := extractJiraTicketID(ticketReference)
+	if ticketID == "" {
+		// No JIRA ticket found, return escaped original text
+		return html.EscapeString(ticketReference)
+	}
+	
+	info, exists := jiraInfo[ticketID]
+	if !exists {
+		// Fallback: create basic link
+		url := fmt.Sprintf("https://issues.redhat.com/browse/%s", ticketID)
+		return fmt.Sprintf(`<a href="%s" target="_blank">%s</a>`, url, html.EscapeString(ticketID))
+	}
+	
+	// Create link with summary if available
+	linkText := info.Key
+	if info.Summary != "" {
+		linkText = fmt.Sprintf("%s: %s", info.Key, info.Summary)
+	}
+	
+	return fmt.Sprintf(`<a href="%s" target="_blank">%s</a>`, info.URL, html.EscapeString(linkText))
+}
+
 // --- Cobra Command Definitions ---
 
 var (
@@ -54,6 +199,9 @@ var (
 	filePath  string
 	startDate string
 	endDate   string
+	copyHTML  bool // Flag for attempting to copy HTML to clipboard
+	htmlFile  string // Flag for saving HTML to file
+	showHTML  bool // Flag for displaying HTML content
 
 	// rootCmd represents the base command when called without any subcommands
 	rootCmd = &cobra.Command{
@@ -98,6 +246,9 @@ func init() {
 	// Add local flags to the 'report' command
 	reportCmd.Flags().StringVar(&startDate, "start-date", "", "Start date (YYYY-MM-DD).")
 	reportCmd.Flags().StringVar(&endDate, "end-date", "", "End date (YYYY-MM-DD).")
+	reportCmd.Flags().BoolVar(&copyHTML, "copy-html", false, "Attempt to copy the report as formatted HTML to clipboard.")
+	reportCmd.Flags().StringVar(&htmlFile, "html-file", "", "Save the report as HTML to the specified file.")
+	reportCmd.Flags().BoolVar(&showHTML, "show-html", false, "Display the HTML content in the terminal.")
 
 	// Add subcommands to the root command
 	rootCmd.AddCommand(hoursCmd)
@@ -224,6 +375,388 @@ func runReportCommand(cmd *cobra.Command, args []string) {
 	printCompletedTasks(out, completedTasks)
 	printNextUpTasks(out, nextUpTasks)
 	printBlockedTasks(out, blockedTasks)
+
+	// Handle HTML output options
+	if copyHTML || htmlFile != "" || showHTML {
+		htmlContent := generateHTMLReport(dates, completedTasks, nextUpTasks, blockedTasks)
+		
+		// Save to file if requested
+		if htmlFile != "" {
+			err := saveHTMLToFile(htmlContent, htmlFile)
+			if err != nil {
+				slog.Error("failed to save HTML to file", "error", err, "file", htmlFile)
+			} else {
+				fmt.Fprintf(out, "\n✅ HTML report saved to: %s\n", htmlFile)
+			}
+		}
+
+		// Show HTML in console if requested
+		if showHTML {
+			fmt.Fprintln(out, "\n=== HTML OUTPUT ===")
+			fmt.Fprintln(out, htmlContent)
+			fmt.Fprintln(out, "=== END HTML OUTPUT ===")
+		}
+
+		// Try to copy to clipboard if requested
+		if copyHTML {
+			err := copyHTMLToClipboard(htmlContent)
+			if err != nil {
+				fmt.Fprintf(out, "\n⚠️  Failed to copy to clipboard: %v\n", err)
+				fmt.Fprintf(out, "💡 Try using --html-file to save to a file instead, or --show-html to display the HTML\n")
+			} else {
+				fmt.Fprintln(out, "\n✅ HTML report copied to clipboard!")
+			}
+		}
+	}
+}
+
+// saveHTMLToFile saves HTML content to a file
+func saveHTMLToFile(htmlContent, filename string) error {
+	return os.WriteFile(filename, []byte(htmlContent), 0644)
+}
+
+// copyHTMLToClipboard attempts to copy HTML to clipboard using system commands
+func copyHTMLToClipboard(htmlContent string) error {
+	switch runtime.GOOS {
+	case "linux":
+		return copyHTMLLinux(htmlContent)
+	case "darwin":
+		return copyHTMLMacOS(htmlContent)
+	case "windows":
+		return copyHTMLWindows(htmlContent)
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+}
+
+func copyHTMLLinux(htmlContent string) error {
+	// Try different clipboard tools in order of preference
+	htmlTools := [][]string{
+		{"wl-copy", "--type", "text/html"},                          // Wayland HTML
+		{"xclip", "-selection", "clipboard", "-t", "text/html"},     // X11 HTML
+		{"xsel", "--clipboard", "--input", "--type", "text/html"},   // X11 alternative HTML
+	}
+
+	for _, tool := range htmlTools {
+		if isCommandAvailable(tool[0]) {
+			cmd := exec.Command(tool[0], tool[1:]...)
+			cmd.Stdin = strings.NewReader(htmlContent)
+			if err := cmd.Run(); err == nil {
+				return nil
+			}
+		}
+	}
+
+	// Fallback: try to copy as plain text
+	textTools := [][]string{
+		{"wl-copy"},                                    // Wayland
+		{"xclip", "-selection", "clipboard"},           // X11
+		{"xsel", "--clipboard", "--input"},             // X11 alternative
+	}
+
+	for _, tool := range textTools {
+		if isCommandAvailable(tool[0]) {
+			cmd := exec.Command(tool[0], tool[1:]...)
+			cmd.Stdin = strings.NewReader(htmlContent)
+			if err := cmd.Run(); err == nil {
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf("no suitable clipboard tool found (tried: wl-copy, xclip, xsel)")
+}
+
+func copyHTMLMacOS(htmlContent string) error {
+	// Use osascript to copy HTML with formatting
+	script := fmt.Sprintf(`osascript -e 'set the clipboard to "%s" as «class HTML»'`, 
+		strings.ReplaceAll(htmlContent, `"`, `\"`))
+	
+	cmd := exec.Command("sh", "-c", script)
+	return cmd.Run()
+}
+
+func copyHTMLWindows(htmlContent string) error {
+	script := fmt.Sprintf(`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Clipboard]::SetText(@"
+%s
+"@, [System.Windows.Forms.TextDataFormat]::Html)`, htmlContent)
+
+	cmd := exec.Command("powershell", "-Command", script)
+	return cmd.Run()
+}
+
+func isCommandAvailable(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+// generateHTMLReport creates an HTML version of the report
+func generateHTMLReport(dates []string, completedTasks map[string][]TaskWithDate, nextUpTasks map[string][]TaskWithDate, blockedTasks []Task) string {
+	// Process JIRA tickets and fetch summaries
+	allTickets := make(map[string][]TaskWithDate)
+	
+	// Combine all ticket references
+	for ticket, tasks := range completedTasks {
+		allTickets[ticket] = tasks
+	}
+	for ticket, tasks := range nextUpTasks {
+		allTickets[ticket] = tasks
+	}
+	for _, task := range blockedTasks {
+		if task.JiraTicket != "" {
+			allTickets[task.JiraTicket] = []TaskWithDate{{Task: task}}
+		}
+	}
+	
+	jiraInfo := processJiraTickets(allTickets)
+	
+	var htmlBuilder strings.Builder
+	
+	// HTML header with styling
+	htmlBuilder.WriteString(`<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
+            line-height: 1.6; 
+            color: #333; 
+            max-width: 900px; 
+            margin: 0 auto; 
+            padding: 20px;
+            background-color: #fff;
+        }
+        h1 { 
+            color: #2c3e50; 
+            border-bottom: 3px solid #3498db; 
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        h2 { 
+            color: #34495e; 
+            margin-top: 30px; 
+            margin-bottom: 15px;
+            font-size: 1.4em;
+        }
+        ul { 
+            padding-left: 0; 
+            list-style: none;
+        }
+        li { 
+            margin: 8px 0; 
+            padding: 5px 0;
+        }
+        .ticket-item {
+            margin: 15px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #3498db;
+        }
+        .ticket-title {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+        .task-description {
+            margin: 5px 0 5px 20px;
+            color: #555;
+        }
+        .pr-links {
+            margin: 5px 0 5px 20px;
+            color: #0366d6;
+            font-style: italic;
+        }
+        .pr-links a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+        .pr-links a:hover {
+            text-decoration: underline;
+        }
+        .blocker-item {
+            background-color: #fff5f5;
+            border-left-color: #e74c3c;
+        }
+        .emoji {
+            font-size: 1.1em;
+            margin-right: 8px;
+        }
+        .section-header {
+            display: flex;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>`)
+
+	// Title
+	htmlBuilder.WriteString(fmt.Sprintf(`<h1>Work Report (%s to %s)</h1>`, dates[0], dates[len(dates)-1]))
+	htmlBuilder.WriteString(`<p><em>Autogenerated by TaskLedger</em></p>`)
+
+	// Completed Tasks Section
+	if len(completedTasks) > 0 {
+		htmlBuilder.WriteString(`<h2 class="section-header"><span class="emoji">🦀</span>Things I've been working on</h2><ul>`)
+		
+		var tickets []string
+		for t := range completedTasks {
+			tickets = append(tickets, t)
+		}
+		sort.Strings(tickets)
+
+		for _, ticket := range tickets {
+			taskList := completedTasks[ticket]
+			sort.Slice(taskList, func(i, j int) bool {
+				return taskList[i].Date < taskList[j].Date
+			})
+
+			htmlBuilder.WriteString(`<li class="ticket-item">`)
+			
+			if ticket != "" {
+				htmlBuilder.WriteString(fmt.Sprintf(`<div class="ticket-title">%s</div>`, formatJiraTicketHTML(ticket, jiraInfo)))
+				
+				var descriptions []string
+				prLinks := make(map[string]bool)
+
+				for _, taskWithDate := range taskList {
+					if taskWithDate.Description != "" {
+						descriptions = append(descriptions, taskWithDate.Description)
+					}
+					if taskWithDate.GithubPR != "" {
+						prLinks[taskWithDate.GithubPR] = true
+					}
+				}
+
+				for _, desc := range descriptions {
+					htmlBuilder.WriteString(fmt.Sprintf(`<div class="task-description">• %s</div>`, html.EscapeString(desc)))
+				}
+
+				if len(prLinks) > 0 {
+					var links []string
+					for link := range prLinks {
+						links = append(links, link)
+					}
+					sort.Strings(links)
+					
+					htmlBuilder.WriteString(`<div class="pr-links">• PR(s): `)
+					for i, link := range links {
+						if i > 0 {
+							htmlBuilder.WriteString("; ")
+						}
+						htmlBuilder.WriteString(fmt.Sprintf(`<a href="%s" target="_blank">%s</a>`, html.EscapeString(link), html.EscapeString(link)))
+					}
+					htmlBuilder.WriteString(`</div>`)
+				}
+			} else {
+				for _, taskWithDate := range taskList {
+					htmlBuilder.WriteString(fmt.Sprintf(`<div class="task-description">• %s</div>`, html.EscapeString(taskWithDate.Description)))
+					if taskWithDate.GithubPR != "" {
+						htmlBuilder.WriteString(fmt.Sprintf(`<div class="pr-links">• PR: <a href="%s" target="_blank">%s</a></div>`, html.EscapeString(taskWithDate.GithubPR), html.EscapeString(taskWithDate.GithubPR)))
+					}
+				}
+			}
+			
+			htmlBuilder.WriteString(`</li>`)
+		}
+		htmlBuilder.WriteString(`</ul>`)
+	}
+
+	// Next Up Tasks Section
+	if len(nextUpTasks) > 0 {
+		htmlBuilder.WriteString(`<h2 class="section-header"><span class="emoji">⭐</span>Things I plan on working on next</h2><ul>`)
+		
+		var tickets []string
+		for ticket := range nextUpTasks {
+			tickets = append(tickets, ticket)
+		}
+		sort.Strings(tickets)
+
+		for _, ticket := range tickets {
+			taskList := nextUpTasks[ticket]
+			sort.Slice(taskList, func(i, j int) bool {
+				return taskList[i].Date < taskList[j].Date
+			})
+
+			htmlBuilder.WriteString(`<li class="ticket-item">`)
+			
+			if ticket != "" {
+				htmlBuilder.WriteString(fmt.Sprintf(`<div class="ticket-title">%s</div>`, formatJiraTicketHTML(ticket, jiraInfo)))
+				
+				var mostRecentDesc string
+				prLinks := make(map[string]bool)
+
+				for i := len(taskList) - 1; i >= 0; i-- {
+					taskWithDate := taskList[i]
+					if mostRecentDesc == "" {
+						if taskWithDate.UpnextDescription != "" {
+							mostRecentDesc = taskWithDate.UpnextDescription
+						} else if taskWithDate.Description != "" {
+							mostRecentDesc = taskWithDate.Description
+						}
+					}
+					if taskWithDate.GithubPR != "" {
+						prLinks[taskWithDate.GithubPR] = true
+					}
+				}
+
+				if mostRecentDesc != "" {
+					htmlBuilder.WriteString(fmt.Sprintf(`<div class="task-description">• %s</div>`, html.EscapeString(mostRecentDesc)))
+				}
+
+				if len(prLinks) > 0 {
+					var links []string
+					for link := range prLinks {
+						links = append(links, link)
+					}
+					sort.Strings(links)
+					
+					htmlBuilder.WriteString(`<div class="pr-links">• PR(s): `)
+					for i, link := range links {
+						if i > 0 {
+							htmlBuilder.WriteString("; ")
+						}
+						htmlBuilder.WriteString(fmt.Sprintf(`<a href="%s" target="_blank">%s</a>`, html.EscapeString(link), html.EscapeString(link)))
+					}
+					htmlBuilder.WriteString(`</div>`)
+				}
+			} else {
+				if len(taskList) > 0 {
+					taskWithDate := taskList[len(taskList)-1]
+					var desc string
+					if taskWithDate.UpnextDescription != "" {
+						desc = taskWithDate.UpnextDescription
+					} else {
+						desc = taskWithDate.Description
+					}
+
+					htmlBuilder.WriteString(fmt.Sprintf(`<div class="task-description">• %s</div>`, html.EscapeString(desc)))
+					if taskWithDate.GithubPR != "" {
+						htmlBuilder.WriteString(fmt.Sprintf(`<div class="pr-links">• PR: <a href="%s" target="_blank">%s</a></div>`, html.EscapeString(taskWithDate.GithubPR), html.EscapeString(taskWithDate.GithubPR)))
+					}
+				}
+			}
+			
+			htmlBuilder.WriteString(`</li>`)
+		}
+		htmlBuilder.WriteString(`</ul>`)
+	}
+
+	// Blocked Tasks Section
+	if len(blockedTasks) > 0 {
+		htmlBuilder.WriteString(`<h2 class="section-header"><span class="emoji">🚫</span>Things that are blocking me</h2><ul>`)
+		
+		for _, task := range blockedTasks {
+			htmlBuilder.WriteString(`<li class="ticket-item blocker-item">`)
+			htmlBuilder.WriteString(fmt.Sprintf(`<div class="ticket-title">%s</div>`, formatJiraTicketHTML(task.JiraTicket, jiraInfo)))
+			htmlBuilder.WriteString(fmt.Sprintf(`<div class="task-description">• Blocker: %s</div>`, html.EscapeString(task.Blocker)))
+			htmlBuilder.WriteString(`</li>`)
+		}
+		htmlBuilder.WriteString(`</ul>`)
+	}
+
+	htmlBuilder.WriteString(`</body></html>`)
+	return htmlBuilder.String()
 }
 
 // --- Helper Functions ---

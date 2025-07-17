@@ -1,6 +1,6 @@
 # TaskLedger
 
-TaskLedger is a command-line interface (CLI) tool for tracking work and generating reports from a YAML log file. It helps you maintain a structured log of your daily tasks, calculate hours worked, and generate progress reports in a clean, human-readable format.
+TaskLedger is a command-line interface (CLI) tool for tracking work and generating reports from a YAML log file. It helps you maintain a structured log of your daily tasks, calculate hours worked, and generate progress reports in both human-readable text and formatted HTML.
 
 ## Disclaimer: AI-Assisted Development
 
@@ -20,6 +20,14 @@ By using the code in this repository, you acknowledge and agree to these terms.
     * 🦀 **Thing I've been working on** - Completed tasks grouped by Jira ticket
     * :starfleet: **Thing I plan on working on next** - In-progress tasks without blockers
     * :facepalm: **Thing that is blocking me** - Tasks with blockers that need attention
+* **JIRA Integration:**
+    * Automatic conversion of JIRA ticket references to clickable links
+    * Fetch and display JIRA ticket summaries (when `JIRA_PAT` is configured)
+    * Support for both ticket IDs and full JIRA URLs
+* **HTML Output Options:**
+    * Export reports as formatted HTML files
+    * Copy HTML to system clipboard (when clipboard tools are available)
+    * Display HTML source in terminal
 * Support for GitHub PR tracking and upnext descriptions
 * Simple and extensible command structure powered by Cobra
 * Structured logging with `slog` for easy integration with other tools
@@ -79,6 +87,48 @@ TaskLedger reads from a `worklog.yml` file in the project root by default. You c
       blocker: "Waiting for access to the production database logs to replicate the issue."
 ```
 
+## JIRA Integration
+
+TaskLedger can automatically convert JIRA ticket references into clickable links and fetch ticket summaries from the Red Hat JIRA instance.
+
+### Configuration
+
+To enable JIRA ticket summary fetching, set the `JIRA_PAT` environment variable with your Personal Access Token:
+
+```bash
+export JIRA_PAT="your_personal_access_token_here"
+```
+
+### Getting a JIRA Personal Access Token
+
+1. Log into [Red Hat JIRA](https://issues.redhat.com/)
+2. Go to your **Account Settings** → **Security** → **Create and manage API tokens**
+3. Click **Create API token**
+4. Give it a name (e.g., "TaskLedger CLI")
+5. Copy the generated token and set it as the `JIRA_PAT` environment variable
+
+### JIRA Integration Features
+
+* **Without `JIRA_PAT`:** JIRA references become clickable links (e.g., `CNTRLPLANE-123` → link to ticket)
+* **With `JIRA_PAT`:** Links include ticket summaries (e.g., `CNTRLPLANE-123: FBC Integration`)
+* **Supported formats:**
+  - Ticket IDs: `PROJ-123`, `CNTRLPLANE-456`
+  - Full URLs: `https://issues.redhat.com/browse/PROJ-123`
+* **Error handling:** If API calls fail, falls back to basic links with warning logs
+
+### Example YAML with JIRA Integration
+
+```yaml
+"2024-07-26":
+  tasks:
+    - jira_ticket: "CNTRLPLANE-123"  # Will become a clickable link
+      description: "Implemented FBC integration"
+      status: "completed"
+    - jira_ticket: "https://issues.redhat.com/browse/PROJ-456"  # Also works with full URLs
+      description: "Bug investigation"
+      status: "in progress"
+```
+
 ## Usage
 
 Here are some examples of how to run the CLI tool from your terminal.
@@ -116,6 +166,39 @@ Here are some examples of how to run the CLI tool from your terminal.
     ```bash
     ./bin/taskledger report
     ```
+
+### HTML Output Options
+
+TaskLedger can generate beautifully formatted HTML reports with clickable JIRA links and styled sections.
+
+* **Save report as HTML file:**
+    ```bash
+    ./bin/taskledger report --html-file report.html
+    ```
+
+* **Copy HTML report to clipboard (when clipboard tools available):**
+    ```bash
+    ./bin/taskledger report --copy-html
+    ```
+
+* **Display HTML source in terminal:**
+    ```bash
+    ./bin/taskledger report --show-html
+    ```
+
+* **Combine options:**
+    ```bash
+    # Generate HTML report with JIRA summaries and save to file
+    export JIRA_PAT="your_token"
+    ./bin/taskledger report --html-file weekly-report.html --start-date=2024-07-26 --end-date=2024-07-27
+    ```
+
+**HTML Features:**
+- Clean, modern styling with proper typography
+- Clickable JIRA ticket links (with summaries when `JIRA_PAT` is configured)
+- Clickable GitHub PR links
+- Responsive design that works in browsers and email clients
+- Professional formatting suitable for sharing with stakeholders
 
 ### Sample Report Output
 
