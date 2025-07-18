@@ -202,6 +202,7 @@ var (
 	copyHTML  bool   // Flag for attempting to copy HTML to clipboard
 	htmlFile  string // Flag for saving HTML to file
 	showHTML  bool   // Flag for displaying HTML content
+	openHTML  bool   // Flag for automatically opening HTML file in browser
 
 	// rootCmd represents the base command when called without any subcommands
 	rootCmd = &cobra.Command{
@@ -249,6 +250,7 @@ func init() {
 	reportCmd.Flags().BoolVar(&copyHTML, "copy-html", false, "Attempt to copy the report as formatted HTML to clipboard.")
 	reportCmd.Flags().StringVar(&htmlFile, "html-file", "", "Save the report as HTML to the specified file.")
 	reportCmd.Flags().BoolVar(&showHTML, "show-html", false, "Display the HTML content in the terminal.")
+	reportCmd.Flags().BoolVar(&openHTML, "open-html", false, "Automatically open the HTML file in the default browser after saving.")
 
 	// Add subcommands to the root command
 	rootCmd.AddCommand(hoursCmd)
@@ -377,7 +379,7 @@ func runReportCommand(cmd *cobra.Command, args []string) {
 	printBlockedTasks(out, blockedTasks)
 
 	// Handle HTML output options
-	if copyHTML || htmlFile != "" || showHTML {
+	if copyHTML || htmlFile != "" || showHTML || openHTML {
 		htmlContent := generateHTMLReport(dates, completedTasks, nextUpTasks, blockedTasks)
 
 		// Save to file if requested
@@ -387,7 +389,20 @@ func runReportCommand(cmd *cobra.Command, args []string) {
 				slog.Error("failed to save HTML to file", "error", err, "file", htmlFile)
 			} else {
 				fmt.Fprintf(out, "\n✅ HTML report saved to: %s\n", htmlFile)
+
+				// Open HTML file in browser if requested
+				if openHTML {
+					err := openHTMLInBrowser(htmlFile)
+					if err != nil {
+						fmt.Fprintf(out, "⚠️  Failed to open HTML file in browser: %v\n", err)
+					} else {
+						fmt.Fprintf(out, "🌐 Opened HTML report in default browser\n")
+					}
+				}
 			}
+		} else if openHTML {
+			// If openHTML is requested but no file is specified, show a helpful message
+			fmt.Fprintf(out, "\n💡 To use --open-html, you must also specify --html-file\n")
 		}
 
 		// Show HTML in console if requested
@@ -488,6 +503,24 @@ func copyHTMLWindows(htmlContent string) error {
 func isCommandAvailable(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
+}
+
+// openHTMLInBrowser opens the specified HTML file in the default browser
+func openHTMLInBrowser(filePath string) error {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", filePath)
+	case "linux":
+		cmd = exec.Command("xdg-open", filePath)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "", filePath)
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+
+	return cmd.Start()
 }
 
 // generateHTMLReport creates an HTML version of the report

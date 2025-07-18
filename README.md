@@ -26,6 +26,7 @@ By using the code in this repository, you acknowledge and agree to these terms.
     * Support for both ticket IDs and full JIRA URLs
 * **HTML Output Options:**
     * Export reports as formatted HTML files
+    * Automatically open HTML reports in default browser
     * Copy HTML to system clipboard (when clipboard tools are available)
     * Display HTML source in terminal
 * Support for GitHub PR tracking and upnext descriptions
@@ -90,6 +91,17 @@ TaskLedger reads from a `worklog.yml` file in the project root by default. You c
 ## JIRA Integration
 
 TaskLedger can automatically convert JIRA ticket references into clickable links and fetch ticket summaries from the Red Hat JIRA instance.
+
+## Slack Integration
+
+TaskLedger's HTML output is specifically optimized for Slack compatibility:
+
+* **Nested List Structure**: HTML reports use proper `<ul>` and `<li>` tags that Slack interprets correctly
+* **Simple Formatting**: Removes complex CSS that Slack doesn't support  
+* **Copy/Paste Friendly**: HTML can be copied directly from browser and pasted into Slack with preserved formatting
+* **Maintains Hierarchy**: JIRA tickets appear as main bullets with task details as sub-bullets
+
+**Usage for Slack**: Generate an HTML report, open it in your browser with `--open-html`, then copy the content and paste directly into Slack for properly formatted status updates.
 
 ### Configuration
 
@@ -176,6 +188,11 @@ TaskLedger can generate beautifully formatted HTML reports with clickable JIRA l
     ./bin/taskledger report --html-file report.html
     ```
 
+* **Save and automatically open HTML file in browser:**
+    ```bash
+    ./bin/taskledger report --html-file report.html --open-html
+    ```
+
 * **Copy HTML report to clipboard (when clipboard tools available):**
     ```bash
     ./bin/taskledger report --copy-html
@@ -188,9 +205,12 @@ TaskLedger can generate beautifully formatted HTML reports with clickable JIRA l
 
 * **Combine options:**
     ```bash
-    # Generate HTML report with JIRA summaries and save to file
+    # Generate HTML report with JIRA summaries, save to file, and auto-open
     export JIRA_PAT="your_token"
-    ./bin/taskledger report --html-file weekly-report.html --start-date=2024-07-26 --end-date=2024-07-27
+    ./bin/taskledger report --html-file weekly-report.html --open-html --start-date=2024-07-26 --end-date=2024-07-27
+    
+    # Generate HTML and both save to file and copy to clipboard
+    ./bin/taskledger report --html-file report.html --copy-html --open-html
     ```
 
 **HTML Features:**
@@ -199,6 +219,8 @@ TaskLedger can generate beautifully formatted HTML reports with clickable JIRA l
 - Clickable GitHub PR links
 - Responsive design that works in browsers and email clients
 - Professional formatting suitable for sharing with stakeholders
+- Cross-platform auto-open support (macOS, Linux, Windows)
+- Slack-compatible nested list structure for easy copy/paste
 
 ### Sample Report Output
 
