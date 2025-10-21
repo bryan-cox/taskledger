@@ -76,6 +76,17 @@ TaskLedger reads from a `worklog.yml` file in the project root by default. You c
       upnext_description: ""
       blocker: "" # Leave empty if not blocked
 
+    # Alternative: Use descriptions array for multiple updates on same ticket
+    - jira_ticket: "PROJ-2000"
+      descriptions:
+        - "Morning: Reviewed architecture and identified performance issues"
+        - "Afternoon: Implemented caching layer for database queries"
+        - "Evening: Verified 40% improvement in response times"
+      status: "completed"
+      github_pr: "https://github.com/example/repo/pull/456"
+      upnext_description: ""
+      blocker: ""
+
 "2024-07-27":
   work_log:
     - start_time: "09:00"
@@ -298,7 +309,8 @@ If you leave `jira_ticket` empty or use the same value for unrelated tasks, Task
 ### Task Fields
 
 - `jira_ticket`: **Required** - Unique identifier for grouping related tasks (Jira ticket ID, URL, or custom identifier)
-- `description`: The main description of the task (required)
+- `description`: Single task description (use this OR descriptions, not both)
+- `descriptions`: Array of multiple descriptions for the same task - useful for tracking multiple updates throughout the day (alternative to description)
 - `status`: Task status - "completed", "in progress", or "not started"
 - `qc_goal`: Quarterly connect goal ID for personal tracking (optional, not displayed in reports)
 - `github_pr`: GitHub pull request URL

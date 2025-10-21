@@ -188,3 +188,71 @@ func TestReportCommand(t *testing.T) {
 		}
 	})
 }
+
+func TestReportCommandWithDescriptionsArray(t *testing.T) {
+	// Create test file with descriptions array
+	content := []byte(`
+"2024-08-10":
+  work_log:
+    - start_time: "09:00"
+      end_time: "17:00"
+  tasks:
+    - jira_ticket: "TEST-100"
+      descriptions:
+        - "Morning: Reviewed code and identified issues"
+        - "Midday: Implemented fixes for authentication bug"
+        - "Afternoon: Added comprehensive test coverage"
+      status: "completed"
+      github_pr: "https://github.com/example/repo/pull/999"
+      upnext_description: ""
+      blocker: ""
+    - jira_ticket: "TEST-200"
+      descriptions:
+        - "Started investigation into performance regression"
+        - "Added profiling to identify bottleneck"
+      status: "in progress"
+      github_pr: ""
+      upnext_description: "Complete performance optimization work"
+      blocker: ""
+`)
+	tmpfile, err := os.CreateTemp("", "test_worklog_desc.*.yml")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write(content); err != nil {
+		t.Fatalf("Failed to write to temp file: %v", err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
+
+	// Reset slog to default
+	defer slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	t.Run("handles descriptions array correctly", func(t *testing.T) {
+		output := executeCommandText(t, "report", "--file", tmpfile.Name())
+
+		// Check that all descriptions from the array appear
+		if !strings.Contains(output, "Morning: Reviewed code and identified issues") {
+			t.Error("Report missing first description from array")
+		}
+		if !strings.Contains(output, "Midday: Implemented fixes for authentication bug") {
+			t.Error("Report missing second description from array")
+		}
+		if !strings.Contains(output, "Afternoon: Added comprehensive test coverage") {
+			t.Error("Report missing third description from array")
+		}
+
+		// Check next up section uses descriptions array
+		if !strings.Contains(output, "Complete performance optimization work") {
+			t.Error("Report should show upnext_description for in-progress task")
+		}
+
+		// Verify PR link is included
+		if !strings.Contains(output, "https://github.com/example/repo/pull/999") {
+			t.Error("Report missing PR link for completed task")
+		}
+	})
+}

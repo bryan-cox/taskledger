@@ -29,13 +29,14 @@ type WorkLog struct {
 
 // Task represents a single work item.
 type Task struct {
-	Status            string `yaml:"status"`
-	Description       string `yaml:"description"`
-	JiraTicket        string `yaml:"jira_ticket"`
-	QCGoal            string `yaml:"qc_goal"`
-	UpnextDescription string `yaml:"upnext_description"`
-	GithubPR          string `yaml:"github_pr"`
-	Blocker           string `yaml:"blocker"`
+	Status            string   `yaml:"status"`
+	Description       string   `yaml:"description"`
+	Descriptions      []string `yaml:"descriptions"`
+	JiraTicket        string   `yaml:"jira_ticket"`
+	QCGoal            string   `yaml:"qc_goal"`
+	UpnextDescription string   `yaml:"upnext_description"`
+	GithubPR          string   `yaml:"github_pr"`
+	Blocker           string   `yaml:"blocker"`
 }
 
 // TaskWithDate represents a task with its associated date for sorting.
@@ -52,6 +53,18 @@ type DailyLog struct {
 
 // WorkData is the top-level structure, mapping dates to daily logs.
 type WorkData map[string]DailyLog
+
+// GetDescriptions returns all descriptions for a task, combining both
+// the singular Description field and the Descriptions array.
+// This provides backward compatibility while supporting multiple descriptions.
+func (t *Task) GetDescriptions() []string {
+	var descs []string
+	if t.Description != "" {
+		descs = append(descs, t.Description)
+	}
+	descs = append(descs, t.Descriptions...)
+	return descs
+}
 
 // --- JIRA Integration ---
 
@@ -591,9 +604,7 @@ func generateHTMLReport(dates []string, completedTasks map[string][]TaskWithDate
 				prLinks := make(map[string]bool)
 
 				for _, taskWithDate := range taskList {
-					if taskWithDate.Description != "" {
-						descriptions = append(descriptions, taskWithDate.Description)
-					}
+					descriptions = append(descriptions, taskWithDate.GetDescriptions()...)
 					if taskWithDate.GithubPR != "" {
 						prLinks[taskWithDate.GithubPR] = true
 					}
@@ -625,7 +636,9 @@ func generateHTMLReport(dates []string, completedTasks map[string][]TaskWithDate
 				htmlBuilder.WriteString(`<li>`)
 				htmlBuilder.WriteString(`<ul>`)
 				for _, taskWithDate := range taskList {
-					htmlBuilder.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(taskWithDate.Description)))
+					for _, desc := range taskWithDate.GetDescriptions() {
+						htmlBuilder.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
+					}
 					if taskWithDate.GithubPR != "" {
 						htmlBuilder.WriteString(fmt.Sprintf(`<li>PR: <a href="%s">%s</a></li>`, html.EscapeString(taskWithDate.GithubPR), html.EscapeString(taskWithDate.GithubPR)))
 					}
@@ -664,8 +677,12 @@ func generateHTMLReport(dates []string, completedTasks map[string][]TaskWithDate
 					if mostRecentDesc == "" {
 						if taskWithDate.UpnextDescription != "" {
 							mostRecentDesc = taskWithDate.UpnextDescription
-						} else if taskWithDate.Description != "" {
-							mostRecentDesc = taskWithDate.Description
+						} else {
+							// Get all descriptions and use the last one if available
+							allDescs := taskWithDate.GetDescriptions()
+							if len(allDescs) > 0 {
+								mostRecentDesc = allDescs[len(allDescs)-1]
+							}
 						}
 					}
 					if taskWithDate.GithubPR != "" {
@@ -702,7 +719,11 @@ func generateHTMLReport(dates []string, completedTasks map[string][]TaskWithDate
 					if taskWithDate.UpnextDescription != "" {
 						desc = taskWithDate.UpnextDescription
 					} else {
-						desc = taskWithDate.Description
+						// Get all descriptions and use the last one if available
+						allDescs := taskWithDate.GetDescriptions()
+						if len(allDescs) > 0 {
+							desc = allDescs[len(allDescs)-1]
+						}
 					}
 
 					htmlBuilder.WriteString(`<li>`)
@@ -834,9 +855,7 @@ func printCompletedTasks(out io.Writer, tasks map[string][]TaskWithDate) {
 			prLinks := make(map[string]bool)
 
 			for _, taskWithDate := range taskList {
-				if taskWithDate.Description != "" {
-					descriptions = append(descriptions, taskWithDate.Description)
-				}
+				descriptions = append(descriptions, taskWithDate.GetDescriptions()...)
 				if taskWithDate.GithubPR != "" {
 					prLinks[taskWithDate.GithubPR] = true
 				}
@@ -906,8 +925,12 @@ func printNextUpTasks(out io.Writer, nextUp map[string][]TaskWithDate) {
 				if mostRecentDesc == "" {
 					if taskWithDate.UpnextDescription != "" {
 						mostRecentDesc = taskWithDate.UpnextDescription
-					} else if taskWithDate.Description != "" {
-						mostRecentDesc = taskWithDate.Description
+					} else {
+						// Get all descriptions and use the last one if available
+						allDescs := taskWithDate.GetDescriptions()
+						if len(allDescs) > 0 {
+							mostRecentDesc = allDescs[len(allDescs)-1]
+						}
 					}
 				}
 				// Collect all unique PR links
@@ -939,7 +962,11 @@ func printNextUpTasks(out io.Writer, nextUp map[string][]TaskWithDate) {
 				if taskWithDate.UpnextDescription != "" {
 					desc = taskWithDate.UpnextDescription
 				} else {
-					desc = taskWithDate.Description
+					// Get all descriptions and use the last one if available
+					allDescs := taskWithDate.GetDescriptions()
+					if len(allDescs) > 0 {
+						desc = allDescs[len(allDescs)-1]
+					}
 				}
 
 				if taskWithDate.GithubPR != "" {

@@ -46,3 +46,19 @@
       description: "Added new sections to the API documentation for the recently added endpoints. Also corrected some typos in existing docs."
       status: "completed"
       blocker: ""
+
+# Example using descriptions array for multiple updates on same ticket
+"2024-07-29":
+  work_log:
+    - start_time: "09:00"
+      end_time: "17:30"
+  tasks:
+    - jira_ticket: "PROJ-3000"
+      descriptions:
+        - "Morning: Reviewed performance metrics and identified database bottleneck"
+        - "Midday: Implemented query optimization and added indexes"
+        - "Afternoon: Verified 60% improvement in API response times"
+      status: "completed"
+      github_pr: "https://github.com/example/repo/pull/789"
+      upnext_description: ""
+      blocker: ""
