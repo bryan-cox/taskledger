@@ -1,3 +1,4 @@
 # Ignore the directory for compiled binaries
 /bin
 .DS_Store
+.idea/
