@@ -32,6 +32,7 @@ type Task struct {
 	Status            string `yaml:"status"`
 	Description       string `yaml:"description"`
 	JiraTicket        string `yaml:"jira_ticket"`
+	QCGoal            string `yaml:"qc_goal"`
 	UpnextDescription string `yaml:"upnext_description"`
 	GithubPR          string `yaml:"github_pr"`
 	Blocker           string `yaml:"blocker"`
@@ -343,10 +344,14 @@ func runReportCommand(cmd *cobra.Command, args []string) {
 			}
 
 			// Track most recent task per Jira ticket (for blockers and filtering)
-			if jiraTicket != "" {
-				if existing, exists := mostRecentTasks[jiraTicket]; !exists || date > existing.Date {
-					mostRecentTasks[jiraTicket] = taskWithDate
-				}
+			// Also track tasks with empty jira_ticket by using a consistent key
+			taskKey := jiraTicket
+			if taskKey == "" {
+				// Use a placeholder key for empty jira tickets to ensure they're tracked
+				taskKey = "__empty__"
+			}
+			if existing, exists := mostRecentTasks[taskKey]; !exists || date > existing.Date {
+				mostRecentTasks[taskKey] = taskWithDate
 			}
 		}
 	}
@@ -354,7 +359,12 @@ func runReportCommand(cmd *cobra.Command, args []string) {
 	// Filter next up tasks: only include tickets where the most recent task is still in progress or not started
 	nextUpTasks := make(map[string][]TaskWithDate)
 	for jiraTicket, taskList := range allNextUpTasks {
-		if mostRecent, exists := mostRecentTasks[jiraTicket]; exists {
+		// Use same key mapping as tracking logic
+		taskKey := jiraTicket
+		if taskKey == "" {
+			taskKey = "__empty__"
+		}
+		if mostRecent, exists := mostRecentTasks[taskKey]; exists {
 			if strings.EqualFold(mostRecent.Status, "in progress") || strings.EqualFold(mostRecent.Status, "not started") {
 				nextUpTasks[jiraTicket] = taskList
 			}

@@ -71,6 +71,7 @@ TaskLedger reads from a `worklog.yml` file in the project root by default. You c
     - jira_ticket: "PROJ-1234"
       description: "Implemented a new OAuth 2.0 authentication flow for user login. This included front-end and back-end changes."
       status: "completed" # Can be: not started, in progress, completed
+      qc_goal: "Q1-2024-Strategic-5" # Optional: for tracking quarterly goals
       github_pr: "https://github.com/example/repo/pull/123"
       upnext_description: ""
       blocker: "" # Leave empty if not blocked
@@ -299,6 +300,7 @@ If you leave `jira_ticket` empty or use the same value for unrelated tasks, Task
 - `jira_ticket`: **Required** - Unique identifier for grouping related tasks (Jira ticket ID, URL, or custom identifier)
 - `description`: The main description of the task (required)
 - `status`: Task status - "completed", "in progress", or "not started"
+- `qc_goal`: Quarterly connect goal ID for personal tracking (optional, not displayed in reports)
 - `github_pr`: GitHub pull request URL
 - `upnext_description`: Specific description for next up tasks
 - `blocker`: Description of what's blocking the task (if any)

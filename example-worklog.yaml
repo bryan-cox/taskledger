@@ -10,6 +10,7 @@
     - jira_ticket: "PROJ-1234"
       description: "Implemented a new OAuth 2.0 authentication flow for user login. This included front-end and back-end changes."
       status: "completed" # Can be: not started, in progress, completed
+      qc_goal: "Q1-2024-Strategic-5" # Optional: for tracking quarterly goals
       blocker: ""
 
 "2024-07-27":
