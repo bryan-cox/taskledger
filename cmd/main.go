@@ -347,7 +347,7 @@ func runReportCommand(cmd *cobra.Command, args []string) {
 
 			// Track completed tasks - include both completed and in-progress tasks with descriptions (actual work done)
 			if strings.EqualFold(task.Status, "completed") ||
-				(strings.EqualFold(task.Status, "in progress") && task.Description != "") {
+				(strings.EqualFold(task.Status, "in progress") && len(task.GetDescriptions()) > 0) {
 				completedTasks[jiraTicket] = append(completedTasks[jiraTicket], taskWithDate)
 			}
 
