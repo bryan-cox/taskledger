@@ -240,6 +240,14 @@ var (
 		Long:  `Generates a formatted text report detailing completed tasks, blockers, and ongoing work for the specified date or date range.`,
 		Run:   runReportCommand,
 	}
+
+	// initCmd represents the init command
+	initCmd = &cobra.Command{
+		Use:   "init",
+		Short: "Create a new worklog.yml file with example entries.",
+		Long:  `Creates a new worklog.yml file populated with example entries for the last two days, showing all available fields.`,
+		Run:   runInitCommand,
+	}
 )
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -269,6 +277,7 @@ func init() {
 	// Add subcommands to the root command
 	rootCmd.AddCommand(hoursCmd)
 	rootCmd.AddCommand(reportCmd)
+	rootCmd.AddCommand(initCmd)
 }
 
 // --- Main Application Entry Point ---
@@ -446,6 +455,94 @@ func runReportCommand(cmd *cobra.Command, args []string) {
 			}
 		}
 	}
+}
+
+func runInitCommand(cmd *cobra.Command, args []string) {
+	// Check if file already exists
+	if _, err := os.Stat(filePath); err == nil {
+		// File exists, ask user if they want to overwrite
+		fmt.Fprintf(cmd.OutOrStdout(), "File '%s' already exists. Overwrite? (y/N): ", filePath)
+		var response string
+		fmt.Scanln(&response)
+		if strings.ToLower(strings.TrimSpace(response)) != "y" {
+			fmt.Fprintln(cmd.OutOrStdout(), "Init cancelled.")
+			return
+		}
+	}
+
+	// Generate sample worklog data for today and yesterday
+	data, err := generateInitialWorklogYAML(time.Now())
+	if err != nil {
+		slog.Error("failed to generate worklog YAML", "error", err)
+		os.Exit(1)
+	}
+
+	// Write to file
+	err = os.WriteFile(filePath, data, 0644)
+	if err != nil {
+		slog.Error("failed to write worklog file", "error", err, "path", filePath)
+		os.Exit(1)
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "✅ Created %s with sample entries for today and yesterday.\n", filePath)
+	fmt.Fprintln(cmd.OutOrStdout(), "Edit the file to add your own work entries!")
+}
+
+// generateInitialWorklogYAML generates sample worklog data as YAML bytes for the given date and the day before
+func generateInitialWorklogYAML(now time.Time) ([]byte, error) {
+	workData := createInitialWorklog(now)
+	return yaml.Marshal(workData)
+}
+
+// createInitialWorklog generates sample worklog data for the given date and the day before
+func createInitialWorklog(now time.Time) WorkData {
+	yesterday := now.AddDate(0, 0, -1)
+
+	workData := WorkData{
+		yesterday.Format("2006-01-02"): DailyLog{
+			WorkLogEntries: []WorkLog{
+				{StartTime: "09:00", EndTime: "12:00"},
+				{StartTime: "13:00", EndTime: "17:00"},
+			},
+			Tasks: []Task{
+				{
+					Status:       "completed",
+					Description:  "Fixed bug in authentication flow",
+					JiraTicket:   "PROJ-1234",
+					GithubPR:     "https://github.com/example/repo/pull/42",
+					QCGoal:       "Ensure users can log in successfully",
+				},
+				{
+					Status:            "in progress",
+					Descriptions:      []string{"Refactored database queries", "Added connection pooling"},
+					JiraTicket:        "PROJ-5678",
+					UpnextDescription: "Add query performance monitoring",
+				},
+			},
+		},
+		now.Format("2006-01-02"): DailyLog{
+			WorkLogEntries: []WorkLog{
+				{StartTime: "09:30", EndTime: "12:30"},
+				{StartTime: "13:30", EndTime: "16:00"},
+			},
+			Tasks: []Task{
+				{
+					Status:            "in progress",
+					Description:       "Implemented new API endpoint for user profiles",
+					JiraTicket:        "PROJ-5678",
+					GithubPR:          "https://github.com/example/repo/pull/43",
+					UpnextDescription: "Add authentication middleware to endpoint",
+				},
+				{
+					Status:     "not started",
+					JiraTicket: "PROJ-9999",
+					Blocker:    "Waiting for design approval from UX team",
+				},
+			},
+		},
+	}
+
+	return workData
 }
 
 // saveHTMLToFile saves HTML content to a file
