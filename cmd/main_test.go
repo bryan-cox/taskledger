@@ -7,6 +7,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // --- Test Setup ---
@@ -253,6 +256,484 @@ func TestReportCommandWithDescriptionsArray(t *testing.T) {
 		// Verify PR link is included
 		if !strings.Contains(output, "https://github.com/example/repo/pull/999") {
 			t.Error("Report missing PR link for completed task")
+		}
+	})
+}
+
+// --- Init Command Tests ---
+
+func TestCreateInitialWorklog(t *testing.T) {
+	// Use a fixed date for deterministic testing
+	fixedDate := time.Date(2025, 10, 31, 12, 0, 0, 0, time.UTC)
+
+	t.Run("creates worklog with correct dates", func(t *testing.T) {
+		workData := createInitialWorklog(fixedDate)
+
+		expectedToday := "2025-10-31"
+		expectedYesterday := "2025-10-30"
+
+		if _, ok := workData[expectedToday]; !ok {
+			t.Errorf("Expected worklog to contain entry for today (%s), but it doesn't", expectedToday)
+		}
+
+		if _, ok := workData[expectedYesterday]; !ok {
+			t.Errorf("Expected worklog to contain entry for yesterday (%s), but it doesn't", expectedYesterday)
+		}
+
+		if len(workData) != 2 {
+			t.Errorf("Expected worklog to contain exactly 2 entries, got %d", len(workData))
+		}
+	})
+
+	t.Run("populates work_log entries correctly", func(t *testing.T) {
+		workData := createInitialWorklog(fixedDate)
+
+		yesterday := workData["2025-10-30"]
+		if len(yesterday.WorkLogEntries) != 2 {
+			t.Errorf("Expected 2 work log entries for yesterday, got %d", len(yesterday.WorkLogEntries))
+		}
+
+		// Verify work log structure
+		if yesterday.WorkLogEntries[0].StartTime == "" || yesterday.WorkLogEntries[0].EndTime == "" {
+			t.Error("Work log entries should have start_time and end_time populated")
+		}
+
+		today := workData["2025-10-31"]
+		if len(today.WorkLogEntries) != 2 {
+			t.Errorf("Expected 2 work log entries for today, got %d", len(today.WorkLogEntries))
+		}
+	})
+
+	t.Run("includes all task field types", func(t *testing.T) {
+		workData := createInitialWorklog(fixedDate)
+
+		// Collect all tasks from both days
+		var allTasks []Task
+		for _, dailyLog := range workData {
+			allTasks = append(allTasks, dailyLog.Tasks...)
+		}
+
+		// Track which fields are used across all tasks
+		hasStatus := false
+		hasDescription := false
+		hasDescriptions := false
+		hasJiraTicket := false
+		hasQCGoal := false
+		hasUpnextDescription := false
+		hasGithubPR := false
+		hasBlocker := false
+
+		for _, task := range allTasks {
+			if task.Status != "" {
+				hasStatus = true
+			}
+			if task.Description != "" {
+				hasDescription = true
+			}
+			if len(task.Descriptions) > 0 {
+				hasDescriptions = true
+			}
+			if task.JiraTicket != "" {
+				hasJiraTicket = true
+			}
+			if task.QCGoal != "" {
+				hasQCGoal = true
+			}
+			if task.UpnextDescription != "" {
+				hasUpnextDescription = true
+			}
+			if task.GithubPR != "" {
+				hasGithubPR = true
+			}
+			if task.Blocker != "" {
+				hasBlocker = true
+			}
+		}
+
+		// Verify all field types are represented
+		if !hasStatus {
+			t.Error("No tasks have status field populated")
+		}
+		if !hasDescription {
+			t.Error("No tasks have description field populated")
+		}
+		if !hasDescriptions {
+			t.Error("No tasks have descriptions array populated")
+		}
+		if !hasJiraTicket {
+			t.Error("No tasks have jira_ticket field populated")
+		}
+		if !hasQCGoal {
+			t.Error("No tasks have qc_goal field populated")
+		}
+		if !hasUpnextDescription {
+			t.Error("No tasks have upnext_description field populated")
+		}
+		if !hasGithubPR {
+			t.Error("No tasks have github_pr field populated")
+		}
+		if !hasBlocker {
+			t.Error("No tasks have blocker field populated")
+		}
+	})
+
+	t.Run("includes all task status types", func(t *testing.T) {
+		workData := createInitialWorklog(fixedDate)
+
+		// Collect all tasks
+		var allTasks []Task
+		for _, dailyLog := range workData {
+			allTasks = append(allTasks, dailyLog.Tasks...)
+		}
+
+		// Track status types
+		statuses := make(map[string]bool)
+		for _, task := range allTasks {
+			statuses[strings.ToLower(task.Status)] = true
+		}
+
+		// Verify all three status types are present
+		expectedStatuses := []string{"completed", "in progress", "not started"}
+		for _, status := range expectedStatuses {
+			if !statuses[status] {
+				t.Errorf("Expected to find task with status '%s', but none found", status)
+			}
+		}
+	})
+
+	t.Run("creates valid task structure", func(t *testing.T) {
+		workData := createInitialWorklog(fixedDate)
+
+		for date, dailyLog := range workData {
+			if len(dailyLog.Tasks) == 0 {
+				t.Errorf("Expected tasks for date %s, but found none", date)
+			}
+
+			for i, task := range dailyLog.Tasks {
+				// Every task should have a status
+				if task.Status == "" {
+					t.Errorf("Task %d on %s has empty status", i, date)
+				}
+			}
+		}
+	})
+}
+
+func TestGenerateInitialWorklogYAML(t *testing.T) {
+	fixedDate := time.Date(2025, 10, 31, 12, 0, 0, 0, time.UTC)
+
+	t.Run("generates valid YAML", func(t *testing.T) {
+		yamlData, err := generateInitialWorklogYAML(fixedDate)
+		if err != nil {
+			t.Fatalf("generateInitialWorklogYAML failed: %v", err)
+		}
+
+		if len(yamlData) == 0 {
+			t.Error("Generated YAML is empty")
+		}
+
+		// Verify it's valid YAML by unmarshaling it
+		var workData WorkData
+		err = yaml.Unmarshal(yamlData, &workData)
+		if err != nil {
+			t.Errorf("Generated YAML is not valid: %v", err)
+		}
+	})
+
+	t.Run("generated YAML can be round-tripped", func(t *testing.T) {
+		// Generate YAML
+		yamlData, err := generateInitialWorklogYAML(fixedDate)
+		if err != nil {
+			t.Fatalf("generateInitialWorklogYAML failed: %v", err)
+		}
+
+		// Unmarshal back to WorkData
+		var workData WorkData
+		err = yaml.Unmarshal(yamlData, &workData)
+		if err != nil {
+			t.Fatalf("Failed to unmarshal generated YAML: %v", err)
+		}
+
+		// Verify the data structure is intact
+		expectedToday := "2025-10-31"
+		expectedYesterday := "2025-10-30"
+
+		if _, ok := workData[expectedToday]; !ok {
+			t.Errorf("Unmarshaled data missing entry for %s", expectedToday)
+		}
+
+		if _, ok := workData[expectedYesterday]; !ok {
+			t.Errorf("Unmarshaled data missing entry for %s", expectedYesterday)
+		}
+
+		// Verify tasks are preserved
+		for date, dailyLog := range workData {
+			if len(dailyLog.Tasks) == 0 {
+				t.Errorf("Unmarshaled data has no tasks for date %s", date)
+			}
+
+			if len(dailyLog.WorkLogEntries) == 0 {
+				t.Errorf("Unmarshaled data has no work log entries for date %s", date)
+			}
+		}
+	})
+
+	t.Run("YAML contains all expected field names", func(t *testing.T) {
+		yamlData, err := generateInitialWorklogYAML(fixedDate)
+		if err != nil {
+			t.Fatalf("generateInitialWorklogYAML failed: %v", err)
+		}
+
+		yamlString := string(yamlData)
+
+		// Check for expected YAML field names
+		expectedFields := []string{
+			"work_log",
+			"start_time",
+			"end_time",
+			"tasks",
+			"status",
+			"description",
+			"descriptions",
+			"jira_ticket",
+			"qc_goal",
+			"upnext_description",
+			"github_pr",
+			"blocker",
+		}
+
+		for _, field := range expectedFields {
+			if !strings.Contains(yamlString, field) {
+				t.Errorf("Generated YAML missing expected field: %s", field)
+			}
+		}
+	})
+
+	t.Run("preserves all task data after round-trip", func(t *testing.T) {
+		// Create original data
+		originalData := createInitialWorklog(fixedDate)
+
+		// Generate YAML
+		yamlData, err := generateInitialWorklogYAML(fixedDate)
+		if err != nil {
+			t.Fatalf("generateInitialWorklogYAML failed: %v", err)
+		}
+
+		// Unmarshal back
+		var roundTrippedData WorkData
+		err = yaml.Unmarshal(yamlData, &roundTrippedData)
+		if err != nil {
+			t.Fatalf("Failed to unmarshal: %v", err)
+		}
+
+		// Compare task counts
+		for date, originalLog := range originalData {
+			roundTrippedLog, ok := roundTrippedData[date]
+			if !ok {
+				t.Errorf("Round-tripped data missing date %s", date)
+				continue
+			}
+
+			if len(originalLog.Tasks) != len(roundTrippedLog.Tasks) {
+				t.Errorf("Date %s: original has %d tasks, round-tripped has %d tasks",
+					date, len(originalLog.Tasks), len(roundTrippedLog.Tasks))
+			}
+
+			if len(originalLog.WorkLogEntries) != len(roundTrippedLog.WorkLogEntries) {
+				t.Errorf("Date %s: original has %d work log entries, round-tripped has %d entries",
+					date, len(originalLog.WorkLogEntries), len(roundTrippedLog.WorkLogEntries))
+			}
+
+			// Verify specific task fields are preserved
+			for i, originalTask := range originalLog.Tasks {
+				if i >= len(roundTrippedLog.Tasks) {
+					break
+				}
+				roundTrippedTask := roundTrippedLog.Tasks[i]
+
+				if originalTask.Status != roundTrippedTask.Status {
+					t.Errorf("Task %d on %s: status mismatch (original: %s, round-tripped: %s)",
+						i, date, originalTask.Status, roundTrippedTask.Status)
+				}
+
+				if originalTask.JiraTicket != roundTrippedTask.JiraTicket {
+					t.Errorf("Task %d on %s: jira_ticket mismatch", i, date)
+				}
+
+				if len(originalTask.Descriptions) != len(roundTrippedTask.Descriptions) {
+					t.Errorf("Task %d on %s: descriptions array length mismatch", i, date)
+				}
+			}
+		}
+	})
+}
+
+func TestInitCommandDataValidation(t *testing.T) {
+	fixedDate := time.Date(2025, 10, 31, 12, 0, 0, 0, time.UTC)
+
+	t.Run("generated data has valid time entries", func(t *testing.T) {
+		yamlData, err := generateInitialWorklogYAML(fixedDate)
+		if err != nil {
+			t.Fatalf("Failed to generate YAML: %v", err)
+		}
+
+		var workData WorkData
+		err = yaml.Unmarshal(yamlData, &workData)
+		if err != nil {
+			t.Fatalf("Failed to unmarshal YAML: %v", err)
+		}
+
+		// Validate that all time entries can be parsed
+		for date, dailyLog := range workData {
+			for i, entry := range dailyLog.WorkLogEntries {
+				_, err := time.Parse("15:04", entry.StartTime)
+				if err != nil {
+					t.Errorf("Date %s, entry %d: invalid start_time format '%s': %v",
+						date, i, entry.StartTime, err)
+				}
+
+				_, err = time.Parse("15:04", entry.EndTime)
+				if err != nil {
+					t.Errorf("Date %s, entry %d: invalid end_time format '%s': %v",
+						date, i, entry.EndTime, err)
+				}
+			}
+		}
+	})
+
+	t.Run("generated data has valid status values", func(t *testing.T) {
+		yamlData, err := generateInitialWorklogYAML(fixedDate)
+		if err != nil {
+			t.Fatalf("Failed to generate YAML: %v", err)
+		}
+
+		var workData WorkData
+		err = yaml.Unmarshal(yamlData, &workData)
+		if err != nil {
+			t.Fatalf("Failed to unmarshal YAML: %v", err)
+		}
+
+		validStatuses := map[string]bool{
+			"completed":   true,
+			"in progress": true,
+			"not started": true,
+		}
+
+		// Validate all task statuses are valid
+		for date, dailyLog := range workData {
+			for i, task := range dailyLog.Tasks {
+				if !validStatuses[task.Status] {
+					t.Errorf("Date %s, task %d: invalid status '%s'", date, i, task.Status)
+				}
+			}
+		}
+	})
+
+	t.Run("generated data structure matches schema", func(t *testing.T) {
+		yamlData, err := generateInitialWorklogYAML(fixedDate)
+		if err != nil {
+			t.Fatalf("Failed to generate YAML: %v", err)
+		}
+
+		var workData WorkData
+		err = yaml.Unmarshal(yamlData, &workData)
+		if err != nil {
+			t.Fatalf("Failed to unmarshal YAML: %v", err)
+		}
+
+		// Verify the unmarshaled data conforms to WorkData structure
+		for date, dailyLog := range workData {
+			// Check date format
+			_, err := time.Parse("2006-01-02", date)
+			if err != nil {
+				t.Errorf("Invalid date format: %s", date)
+			}
+
+			// Verify DailyLog structure
+			if dailyLog.WorkLogEntries == nil {
+				t.Errorf("Date %s: WorkLogEntries is nil (should be initialized)", date)
+			}
+
+			if dailyLog.Tasks == nil {
+				t.Errorf("Date %s: Tasks is nil (should be initialized)", date)
+			}
+
+			// Verify each task can access all fields without panic
+			for _, task := range dailyLog.Tasks {
+				_ = task.Status
+				_ = task.Description
+				_ = task.Descriptions
+				_ = task.JiraTicket
+				_ = task.QCGoal
+				_ = task.UpnextDescription
+				_ = task.GithubPR
+				_ = task.Blocker
+
+				// Test GetDescriptions method works (nil is valid for empty descriptions)
+				_ = task.GetDescriptions()
+			}
+		}
+	})
+
+	t.Run("generated data is suitable for report generation", func(t *testing.T) {
+		yamlData, err := generateInitialWorklogYAML(fixedDate)
+		if err != nil {
+			t.Fatalf("Failed to generate YAML: %v", err)
+		}
+
+		var workData WorkData
+		err = yaml.Unmarshal(yamlData, &workData)
+		if err != nil {
+			t.Fatalf("Failed to unmarshal YAML: %v", err)
+		}
+
+		// Simulate the report generation logic to ensure data is suitable
+		hasCompletedTask := false
+		hasInProgressTask := false
+		hasBlockedTask := false
+
+		for _, dailyLog := range workData {
+			for _, task := range dailyLog.Tasks {
+				if strings.EqualFold(task.Status, "completed") ||
+					(strings.EqualFold(task.Status, "in progress") && len(task.GetDescriptions()) > 0) {
+					hasCompletedTask = true
+				}
+
+				if strings.EqualFold(task.Status, "in progress") {
+					hasInProgressTask = true
+				}
+
+				if task.Blocker != "" {
+					hasBlockedTask = true
+				}
+			}
+		}
+
+		if !hasCompletedTask {
+			t.Error("Generated data should have at least one task suitable for 'completed' section")
+		}
+
+		if !hasInProgressTask {
+			t.Error("Generated data should have at least one in-progress task")
+		}
+
+		if !hasBlockedTask {
+			t.Error("Generated data should have at least one blocked task")
+		}
+	})
+
+	t.Run("YAML serialization produces consistent output", func(t *testing.T) {
+		// Generate YAML twice
+		yaml1, err1 := generateInitialWorklogYAML(fixedDate)
+		yaml2, err2 := generateInitialWorklogYAML(fixedDate)
+
+		if err1 != nil || err2 != nil {
+			t.Fatalf("Failed to generate YAML: %v, %v", err1, err2)
+		}
+
+		// The output should be identical for the same input date
+		if !bytes.Equal(yaml1, yaml2) {
+			t.Error("generateInitialWorklogYAML should produce consistent output for the same date")
 		}
 	})
 }
