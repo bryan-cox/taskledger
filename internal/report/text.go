@@ -26,8 +26,7 @@ func PrintCompletedTasks(out io.Writer, tasks map[string][]model.TaskWithDate) {
 
 	// Separate feature work and non-feature work
 	var featureTickets []string
-	var nonFeatureDescriptions []string
-	nonFeaturePRLinks := make(map[string]bool)
+	var nonFeatureTickets []string
 
 	for ticket := range tasks {
 		taskList := tasks[ticket]
@@ -40,82 +39,109 @@ func PrintCompletedTasks(out io.Writer, tasks map[string][]model.TaskWithDate) {
 			}
 		}
 
-		if IsNonFeatureWork(ticket, func() string {
-			if hasPR {
-				return "has-pr"
-			}
-			return ""
-		}()) {
-			// Collect non-feature work descriptions and PRs
-			for _, taskWithDate := range taskList {
-				nonFeatureDescriptions = append(nonFeatureDescriptions, taskWithDate.GetDescriptions()...)
-				if taskWithDate.GithubPR != "" {
-					nonFeaturePRLinks[taskWithDate.GithubPR] = true
-				}
-			}
+		prArg := ""
+		if hasPR {
+			prArg = "has-pr"
+		}
+
+		if IsNonFeatureWork(ticket, prArg) {
+			nonFeatureTickets = append(nonFeatureTickets, ticket)
 		} else {
 			featureTickets = append(featureTickets, ticket)
 		}
 	}
 	sort.Strings(featureTickets)
+	sort.Strings(nonFeatureTickets)
 
 	// Print feature work first
 	for _, ticket := range featureTickets {
-		taskList := tasks[ticket]
+		printTicketEntry(out, ticket, tasks[ticket])
+	}
 
-		// Sort tasks chronologically (oldest to newest)
-		sort.Slice(taskList, func(i, j int) bool {
-			return taskList[i].Date < taskList[j].Date
-		})
-
-		// Print the Jira ticket header
-		fmt.Fprintf(out, "    • %s: \n", ticket)
-
-		// Collect all descriptions and unique PR links
-		var descriptions []string
-		prLinks := make(map[string]bool)
-
-		for _, taskWithDate := range taskList {
-			descriptions = append(descriptions, taskWithDate.GetDescriptions()...)
-			if taskWithDate.GithubPR != "" {
-				prLinks[taskWithDate.GithubPR] = true
-			}
+	// Print non-feature work at the end (grouped under "Non-feature work" with sub-entries)
+	if len(nonFeatureTickets) > 0 {
+		fmt.Fprintf(out, "    • %s: \n", textNonFeatureWorkHeader)
+		for _, ticket := range nonFeatureTickets {
+			printNonFeatureSubEntry(out, ticket, tasks[ticket])
 		}
+	}
+}
 
-		// Print all descriptions
-		for _, desc := range descriptions {
-			fmt.Fprintf(out, "        ◦ %s", desc)
-			// If there are PR links, add them after the last description
-			if len(descriptions) > 0 && desc == descriptions[len(descriptions)-1] && len(prLinks) > 0 {
-				var links []string
-				for link := range prLinks {
-					links = append(links, link)
-				}
-				sort.Strings(links)
-				output := fmt.Sprintf("\n        ◦ PR(s): %s", strings.Join(links, "; "))
-				fmt.Fprint(out, output)
-			}
-			fmt.Fprintln(out)
+// printTicketEntry prints a single ticket entry with its descriptions and PRs.
+func printTicketEntry(out io.Writer, ticket string, taskList []model.TaskWithDate) {
+	// Sort tasks chronologically (oldest to newest)
+	sort.Slice(taskList, func(i, j int) bool {
+		return taskList[i].Date < taskList[j].Date
+	})
+
+	// Print the Jira ticket header
+	fmt.Fprintf(out, "    • %s: \n", ticket)
+
+	// Collect all descriptions and unique PR links
+	var descriptions []string
+	prLinks := make(map[string]bool)
+
+	for _, taskWithDate := range taskList {
+		descriptions = append(descriptions, taskWithDate.GetDescriptions()...)
+		if taskWithDate.GithubPR != "" {
+			prLinks[taskWithDate.GithubPR] = true
 		}
 	}
 
-	// Print non-feature work at the end
-	if len(nonFeatureDescriptions) > 0 {
-		fmt.Fprintf(out, "    • %s: \n", textNonFeatureWorkHeader)
-		for i, desc := range nonFeatureDescriptions {
-			fmt.Fprintf(out, "        ◦ %s", desc)
-			// If there are PR links, add them after the last description
-			if i == len(nonFeatureDescriptions)-1 && len(nonFeaturePRLinks) > 0 {
-				var links []string
-				for link := range nonFeaturePRLinks {
-					links = append(links, link)
-				}
-				sort.Strings(links)
-				output := fmt.Sprintf("\n        ◦ PR(s): %s", strings.Join(links, "; "))
-				fmt.Fprint(out, output)
-			}
-			fmt.Fprintln(out)
+	// Print all descriptions
+	for _, desc := range descriptions {
+		fmt.Fprintf(out, "        ◦ %s\n", desc)
+	}
+
+	// Print PR links
+	if len(prLinks) > 0 {
+		var links []string
+		for link := range prLinks {
+			links = append(links, link)
 		}
+		sort.Strings(links)
+		fmt.Fprintf(out, "        ◦ PR(s): %s\n", strings.Join(links, "; "))
+	}
+}
+
+// printNonFeatureSubEntry prints a non-feature work sub-entry with ticket name as header.
+func printNonFeatureSubEntry(out io.Writer, ticket string, taskList []model.TaskWithDate) {
+	// Sort tasks chronologically (oldest to newest)
+	sort.Slice(taskList, func(i, j int) bool {
+		return taskList[i].Date < taskList[j].Date
+	})
+
+	// Use ticket text as the sub-entry header (or "Misc" if empty)
+	header := ticket
+	if header == "" {
+		header = "Misc"
+	}
+	fmt.Fprintf(out, "        ◦ %s\n", header)
+
+	// Collect all descriptions and unique PR links
+	var descriptions []string
+	prLinks := make(map[string]bool)
+
+	for _, taskWithDate := range taskList {
+		descriptions = append(descriptions, taskWithDate.GetDescriptions()...)
+		if taskWithDate.GithubPR != "" {
+			prLinks[taskWithDate.GithubPR] = true
+		}
+	}
+
+	// Print all descriptions (third-level indent)
+	for _, desc := range descriptions {
+		fmt.Fprintf(out, "            ▪ %s\n", desc)
+	}
+
+	// Print PR links
+	if len(prLinks) > 0 {
+		var links []string
+		for link := range prLinks {
+			links = append(links, link)
+		}
+		sort.Strings(links)
+		fmt.Fprintf(out, "            ▪ PR(s): %s\n", strings.Join(links, "; "))
 	}
 }
 
@@ -128,8 +154,7 @@ func PrintNextUpTasks(out io.Writer, nextUp map[string][]model.TaskWithDate) {
 
 	// Separate feature work and non-feature work
 	var featureTickets []string
-	var nonFeatureDescriptions []string
-	nonFeaturePRLinks := make(map[string]bool)
+	var nonFeatureTickets []string
 
 	for ticket := range nextUp {
 		taskList := nextUp[ticket]
@@ -142,106 +167,130 @@ func PrintNextUpTasks(out io.Writer, nextUp map[string][]model.TaskWithDate) {
 			}
 		}
 
-		if IsNonFeatureWork(ticket, func() string {
-			if hasPR {
-				return "has-pr"
-			}
-			return ""
-		}()) {
-			// Collect non-feature work descriptions (most recent per ticket group)
-			sort.Slice(taskList, func(i, j int) bool {
-				return taskList[i].Date < taskList[j].Date
-			})
-			for i := len(taskList) - 1; i >= 0; i-- {
-				taskWithDate := taskList[i]
-				var desc string
-				if taskWithDate.UpnextDescription != "" {
-					desc = taskWithDate.UpnextDescription
-				} else {
-					allDescs := taskWithDate.GetDescriptions()
-					if len(allDescs) > 0 {
-						desc = allDescs[len(allDescs)-1]
-					}
-				}
-				if desc != "" {
-					nonFeatureDescriptions = append(nonFeatureDescriptions, desc)
-					break
-				}
-				if taskWithDate.GithubPR != "" {
-					nonFeaturePRLinks[taskWithDate.GithubPR] = true
-				}
-			}
+		prArg := ""
+		if hasPR {
+			prArg = "has-pr"
+		}
+
+		if IsNonFeatureWork(ticket, prArg) {
+			nonFeatureTickets = append(nonFeatureTickets, ticket)
 		} else {
 			featureTickets = append(featureTickets, ticket)
 		}
 	}
 	sort.Strings(featureTickets)
+	sort.Strings(nonFeatureTickets)
 
 	// Print feature work first
 	for _, ticket := range featureTickets {
-		taskList := nextUp[ticket]
+		printNextUpTicketEntry(out, ticket, nextUp[ticket])
+	}
 
-		// Sort tasks chronologically (oldest to newest)
-		sort.Slice(taskList, func(i, j int) bool {
-			return taskList[i].Date < taskList[j].Date
-		})
+	// Print non-feature work at the end (grouped under "Non-feature work" with sub-entries)
+	if len(nonFeatureTickets) > 0 {
+		fmt.Fprintf(out, "    • %s\n", textNonFeatureWorkHeader)
+		for _, ticket := range nonFeatureTickets {
+			printNonFeatureNextUpSubEntry(out, ticket, nextUp[ticket])
+		}
+	}
+}
 
-		fmt.Fprintf(out, "    • %s\n", ticket)
+// printNextUpTicketEntry prints a single next up ticket entry.
+func printNextUpTicketEntry(out io.Writer, ticket string, taskList []model.TaskWithDate) {
+	// Sort tasks chronologically (oldest to newest)
+	sort.Slice(taskList, func(i, j int) bool {
+		return taskList[i].Date < taskList[j].Date
+	})
 
-		// For next up tasks, only use the most recent entry per ticket
-		var mostRecentDesc string
-		prLinks := make(map[string]bool)
+	fmt.Fprintf(out, "    • %s\n", ticket)
 
-		// Work backwards to find the most recent upnext description
-		for i := len(taskList) - 1; i >= 0; i-- {
-			taskWithDate := taskList[i]
-			if mostRecentDesc == "" {
-				if taskWithDate.UpnextDescription != "" {
-					mostRecentDesc = taskWithDate.UpnextDescription
-				} else {
-					allDescs := taskWithDate.GetDescriptions()
-					if len(allDescs) > 0 {
-						mostRecentDesc = allDescs[len(allDescs)-1]
-					}
+	// For next up tasks, only use the most recent entry per ticket
+	var mostRecentDesc string
+	prLinks := make(map[string]bool)
+
+	// Work backwards to find the most recent upnext description
+	for i := len(taskList) - 1; i >= 0; i-- {
+		taskWithDate := taskList[i]
+		if mostRecentDesc == "" {
+			if taskWithDate.UpnextDescription != "" {
+				mostRecentDesc = taskWithDate.UpnextDescription
+			} else {
+				allDescs := taskWithDate.GetDescriptions()
+				if len(allDescs) > 0 {
+					mostRecentDesc = allDescs[len(allDescs)-1]
 				}
-			}
-			if taskWithDate.GithubPR != "" {
-				prLinks[taskWithDate.GithubPR] = true
 			}
 		}
-
-		// Print the most recent description
-		if mostRecentDesc != "" {
-			fmt.Fprintf(out, "        ◦ %s", mostRecentDesc)
-			if len(prLinks) > 0 {
-				var links []string
-				for link := range prLinks {
-					links = append(links, link)
-				}
-				sort.Strings(links)
-				output := fmt.Sprintf("\n        ◦ PR(s): %s", strings.Join(links, "; "))
-				fmt.Fprint(out, output)
-			}
-			fmt.Fprintln(out)
+		if taskWithDate.GithubPR != "" {
+			prLinks[taskWithDate.GithubPR] = true
 		}
 	}
 
-	// Print non-feature work at the end
-	if len(nonFeatureDescriptions) > 0 {
-		fmt.Fprintf(out, "    • %s\n", textNonFeatureWorkHeader)
-		for i, desc := range nonFeatureDescriptions {
-			fmt.Fprintf(out, "        ◦ %s", desc)
-			if i == len(nonFeatureDescriptions)-1 && len(nonFeaturePRLinks) > 0 {
-				var links []string
-				for link := range nonFeaturePRLinks {
-					links = append(links, link)
-				}
-				sort.Strings(links)
-				output := fmt.Sprintf("\n        ◦ PR(s): %s", strings.Join(links, "; "))
-				fmt.Fprint(out, output)
-			}
-			fmt.Fprintln(out)
+	// Print the most recent description
+	if mostRecentDesc != "" {
+		fmt.Fprintf(out, "        ◦ %s\n", mostRecentDesc)
+	}
+
+	// Print PR links
+	if len(prLinks) > 0 {
+		var links []string
+		for link := range prLinks {
+			links = append(links, link)
 		}
+		sort.Strings(links)
+		fmt.Fprintf(out, "        ◦ PR(s): %s\n", strings.Join(links, "; "))
+	}
+}
+
+// printNonFeatureNextUpSubEntry prints a non-feature next up sub-entry.
+func printNonFeatureNextUpSubEntry(out io.Writer, ticket string, taskList []model.TaskWithDate) {
+	// Sort tasks chronologically (oldest to newest)
+	sort.Slice(taskList, func(i, j int) bool {
+		return taskList[i].Date < taskList[j].Date
+	})
+
+	// Use ticket text as the sub-entry header (or "Misc" if empty)
+	header := ticket
+	if header == "" {
+		header = "Misc"
+	}
+	fmt.Fprintf(out, "        ◦ %s\n", header)
+
+	// For next up tasks, only use the most recent entry per ticket
+	var mostRecentDesc string
+	prLinks := make(map[string]bool)
+
+	// Work backwards to find the most recent upnext description
+	for i := len(taskList) - 1; i >= 0; i-- {
+		taskWithDate := taskList[i]
+		if mostRecentDesc == "" {
+			if taskWithDate.UpnextDescription != "" {
+				mostRecentDesc = taskWithDate.UpnextDescription
+			} else {
+				allDescs := taskWithDate.GetDescriptions()
+				if len(allDescs) > 0 {
+					mostRecentDesc = allDescs[len(allDescs)-1]
+				}
+			}
+		}
+		if taskWithDate.GithubPR != "" {
+			prLinks[taskWithDate.GithubPR] = true
+		}
+	}
+
+	// Print the most recent description (third-level indent)
+	if mostRecentDesc != "" {
+		fmt.Fprintf(out, "            ▪ %s\n", mostRecentDesc)
+	}
+
+	// Print PR links
+	if len(prLinks) > 0 {
+		var links []string
+		for link := range prLinks {
+			links = append(links, link)
+		}
+		sort.Strings(links)
+		fmt.Fprintf(out, "            ▪ PR(s): %s\n", strings.Join(links, "; "))
 	}
 }
 
@@ -253,11 +302,11 @@ func PrintBlockedTasks(out io.Writer, blocked []model.Task) {
 
 	// Separate feature work and non-feature work
 	var featureTasks []model.Task
-	var nonFeatureBlockers []string
+	var nonFeatureTasks []model.Task
 
 	for _, task := range blocked {
 		if IsNonFeatureWork(task.JiraTicket, task.GithubPR) {
-			nonFeatureBlockers = append(nonFeatureBlockers, task.Blocker)
+			nonFeatureTasks = append(nonFeatureTasks, task)
 		} else {
 			featureTasks = append(featureTasks, task)
 		}
@@ -271,11 +320,16 @@ func PrintBlockedTasks(out io.Writer, blocked []model.Task) {
 		fmt.Fprintf(out, "        ◦ Blocker: %s\n", task.Blocker)
 	}
 
-	// Print non-feature work at the end
-	if len(nonFeatureBlockers) > 0 {
+	// Print non-feature work at the end (grouped under "Non-feature work" with sub-entries)
+	if len(nonFeatureTasks) > 0 {
 		fmt.Fprintf(out, "    • %s \n", textNonFeatureWorkHeader)
-		for _, blocker := range nonFeatureBlockers {
-			fmt.Fprintf(out, "        ◦ Blocker: %s\n", blocker)
+		for _, task := range nonFeatureTasks {
+			header := task.JiraTicket
+			if header == "" {
+				header = "Misc"
+			}
+			fmt.Fprintf(out, "        ◦ %s\n", header)
+			fmt.Fprintf(out, "            ▪ Blocker: %s\n", task.Blocker)
 		}
 	}
 }
