@@ -12,13 +12,16 @@ import (
 // A task is non-feature work if:
 // - jira_ticket is empty, OR
 // - jira_ticket contains "NO-JIRA" AND github_pr is empty, OR
-// - jira_ticket does NOT contain a valid JIRA ticket pattern (PROJ-123)
+// - jira_ticket does NOT contain a valid JIRA ticket pattern (PROJ-123) AND does NOT contain "NO-JIRA"
+//
+// Note: NO-JIRA with a PR is considered feature work (shown as its own entry, not under non-feature)
 func IsNonFeatureWork(ticket string, githubPR string) bool {
 	if ticket == "" {
 		return true
 	}
-	if strings.Contains(strings.ToUpper(ticket), "NO-JIRA") && githubPR == "" {
-		return true
+	// NO-JIRA items: non-feature only if no PR, otherwise feature work
+	if strings.Contains(strings.ToUpper(ticket), "NO-JIRA") {
+		return githubPR == ""
 	}
 	// Reuse existing jira.ExtractTicketID to check for valid JIRA pattern
 	if jira.ExtractTicketID(ticket) == "" {

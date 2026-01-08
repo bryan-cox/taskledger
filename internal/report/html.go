@@ -107,8 +107,7 @@ func renderCompletedTasksHTML(tasks map[string][]model.TaskWithDate, jiraInfo ma
 
 	// Separate feature work and non-feature work
 	var featureTickets []string
-	var nonFeatureDescriptions []string
-	nonFeaturePRLinks := make(map[string]bool)
+	var nonFeatureTickets []string
 
 	for ticket := range tasks {
 		taskList := tasks[ticket]
@@ -121,64 +120,103 @@ func renderCompletedTasksHTML(tasks map[string][]model.TaskWithDate, jiraInfo ma
 			}
 		}
 
-		if IsNonFeatureWork(ticket, func() string {
-			if hasPR {
-				return "has-pr"
-			}
-			return ""
-		}()) {
-			// Collect non-feature work descriptions and PRs
-			for _, taskWithDate := range taskList {
-				nonFeatureDescriptions = append(nonFeatureDescriptions, taskWithDate.GetDescriptions()...)
-				if taskWithDate.GithubPR != "" {
-					nonFeaturePRLinks[taskWithDate.GithubPR] = true
-				}
-			}
+		prArg := ""
+		if hasPR {
+			prArg = "has-pr"
+		}
+
+		if IsNonFeatureWork(ticket, prArg) {
+			nonFeatureTickets = append(nonFeatureTickets, ticket)
 		} else {
 			featureTickets = append(featureTickets, ticket)
 		}
 	}
 	sort.Strings(featureTickets)
+	sort.Strings(nonFeatureTickets)
 
 	// Render feature work first
 	for _, ticket := range featureTickets {
-		taskList := tasks[ticket]
-		sort.Slice(taskList, func(i, j int) bool {
-			return taskList[i].Date < taskList[j].Date
-		})
+		sb.WriteString(renderTicketEntryHTML(ticket, tasks[ticket], jiraInfo))
+	}
 
-		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, jira.FormatTicketHTML(ticket, jiraInfo)))
-
-		var descriptions []string
-		prLinks := make(map[string]bool)
-
-		for _, taskWithDate := range taskList {
-			descriptions = append(descriptions, taskWithDate.GetDescriptions()...)
-			if taskWithDate.GithubPR != "" {
-				prLinks[taskWithDate.GithubPR] = true
-			}
+	// Render non-feature work at the end (grouped under "Non-feature work" with sub-entries)
+	if len(nonFeatureTickets) > 0 {
+		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, htmlNonFeatureWorkHeader))
+		sb.WriteString(`<ul>`)
+		for _, ticket := range nonFeatureTickets {
+			sb.WriteString(renderNonFeatureSubEntryHTML(ticket, tasks[ticket]))
 		}
+		sb.WriteString(`</ul></li>`)
+	}
 
+	sb.WriteString(`</ul>`)
+	return sb.String()
+}
+
+// renderTicketEntryHTML renders a single ticket entry with its descriptions and PRs.
+func renderTicketEntryHTML(ticket string, taskList []model.TaskWithDate, jiraInfo map[string]jira.TicketInfo) string {
+	sort.Slice(taskList, func(i, j int) bool {
+		return taskList[i].Date < taskList[j].Date
+	})
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, jira.FormatTicketHTML(ticket, jiraInfo)))
+
+	var descriptions []string
+	prLinks := make(map[string]bool)
+
+	for _, taskWithDate := range taskList {
+		descriptions = append(descriptions, taskWithDate.GetDescriptions()...)
+		if taskWithDate.GithubPR != "" {
+			prLinks[taskWithDate.GithubPR] = true
+		}
+	}
+
+	sb.WriteString(`<ul>`)
+	for _, desc := range descriptions {
+		sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
+	}
+	sb.WriteString(renderPRLinksHTML(prLinks))
+	sb.WriteString(`</ul></li>`)
+
+	return sb.String()
+}
+
+// renderNonFeatureSubEntryHTML renders a non-feature work sub-entry with ticket name as header and descriptions as nested bullets.
+func renderNonFeatureSubEntryHTML(ticket string, taskList []model.TaskWithDate) string {
+	sort.Slice(taskList, func(i, j int) bool {
+		return taskList[i].Date < taskList[j].Date
+	})
+
+	var descriptions []string
+	prLinks := make(map[string]bool)
+
+	for _, taskWithDate := range taskList {
+		descriptions = append(descriptions, taskWithDate.GetDescriptions()...)
+		if taskWithDate.GithubPR != "" {
+			prLinks[taskWithDate.GithubPR] = true
+		}
+	}
+
+	var sb strings.Builder
+
+	// Use ticket text as the sub-entry header (or "Misc" if empty)
+	header := ticket
+	if header == "" {
+		header = "Misc"
+	}
+	sb.WriteString(fmt.Sprintf(`<li>%s`, html.EscapeString(header)))
+
+	if len(descriptions) > 0 || len(prLinks) > 0 {
 		sb.WriteString(`<ul>`)
 		for _, desc := range descriptions {
 			sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
 		}
 		sb.WriteString(renderPRLinksHTML(prLinks))
-		sb.WriteString(`</ul></li>`)
+		sb.WriteString(`</ul>`)
 	}
+	sb.WriteString(`</li>`)
 
-	// Render non-feature work at the end
-	if len(nonFeatureDescriptions) > 0 {
-		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, htmlNonFeatureWorkHeader))
-		sb.WriteString(`<ul>`)
-		for _, desc := range nonFeatureDescriptions {
-			sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
-		}
-		sb.WriteString(renderPRLinksHTML(nonFeaturePRLinks))
-		sb.WriteString(`</ul></li>`)
-	}
-
-	sb.WriteString(`</ul>`)
 	return sb.String()
 }
 
@@ -194,8 +232,7 @@ func renderNextUpTasksHTML(tasks map[string][]model.TaskWithDate, jiraInfo map[s
 
 	// Separate feature work and non-feature work
 	var featureTickets []string
-	var nonFeatureDescriptions []string
-	nonFeaturePRLinks := make(map[string]bool)
+	var nonFeatureTickets []string
 
 	for ticket := range tasks {
 		taskList := tasks[ticket]
@@ -208,90 +245,121 @@ func renderNextUpTasksHTML(tasks map[string][]model.TaskWithDate, jiraInfo map[s
 			}
 		}
 
-		if IsNonFeatureWork(ticket, func() string {
-			if hasPR {
-				return "has-pr"
-			}
-			return ""
-		}()) {
-			// Collect non-feature work descriptions (most recent per ticket group)
-			sort.Slice(taskList, func(i, j int) bool {
-				return taskList[i].Date < taskList[j].Date
-			})
-			for i := len(taskList) - 1; i >= 0; i-- {
-				taskWithDate := taskList[i]
-				var desc string
-				if taskWithDate.UpnextDescription != "" {
-					desc = taskWithDate.UpnextDescription
-				} else {
-					allDescs := taskWithDate.GetDescriptions()
-					if len(allDescs) > 0 {
-						desc = allDescs[len(allDescs)-1]
-					}
-				}
-				if desc != "" {
-					nonFeatureDescriptions = append(nonFeatureDescriptions, desc)
-					break
-				}
-				if taskWithDate.GithubPR != "" {
-					nonFeaturePRLinks[taskWithDate.GithubPR] = true
-				}
-			}
+		prArg := ""
+		if hasPR {
+			prArg = "has-pr"
+		}
+
+		if IsNonFeatureWork(ticket, prArg) {
+			nonFeatureTickets = append(nonFeatureTickets, ticket)
 		} else {
 			featureTickets = append(featureTickets, ticket)
 		}
 	}
 	sort.Strings(featureTickets)
+	sort.Strings(nonFeatureTickets)
 
 	// Render feature work first
 	for _, ticket := range featureTickets {
-		taskList := tasks[ticket]
-		sort.Slice(taskList, func(i, j int) bool {
-			return taskList[i].Date < taskList[j].Date
-		})
+		sb.WriteString(renderNextUpTicketEntryHTML(ticket, tasks[ticket], jiraInfo))
+	}
 
-		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, jira.FormatTicketHTML(ticket, jiraInfo)))
+	// Render non-feature work at the end (grouped under "Non-feature work" with sub-entries)
+	if len(nonFeatureTickets) > 0 {
+		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, htmlNonFeatureWorkHeader))
+		sb.WriteString(`<ul>`)
+		for _, ticket := range nonFeatureTickets {
+			sb.WriteString(renderNonFeatureNextUpSubEntryHTML(ticket, tasks[ticket]))
+		}
+		sb.WriteString(`</ul></li>`)
+	}
 
-		var mostRecentDesc string
-		prLinks := make(map[string]bool)
+	sb.WriteString(`</ul>`)
+	return sb.String()
+}
 
-		for i := len(taskList) - 1; i >= 0; i-- {
-			taskWithDate := taskList[i]
-			if mostRecentDesc == "" {
-				if taskWithDate.UpnextDescription != "" {
-					mostRecentDesc = taskWithDate.UpnextDescription
-				} else {
-					allDescs := taskWithDate.GetDescriptions()
-					if len(allDescs) > 0 {
-						mostRecentDesc = allDescs[len(allDescs)-1]
-					}
+// renderNextUpTicketEntryHTML renders a single next up ticket entry.
+func renderNextUpTicketEntryHTML(ticket string, taskList []model.TaskWithDate, jiraInfo map[string]jira.TicketInfo) string {
+	sort.Slice(taskList, func(i, j int) bool {
+		return taskList[i].Date < taskList[j].Date
+	})
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, jira.FormatTicketHTML(ticket, jiraInfo)))
+
+	var mostRecentDesc string
+	prLinks := make(map[string]bool)
+
+	for i := len(taskList) - 1; i >= 0; i-- {
+		taskWithDate := taskList[i]
+		if mostRecentDesc == "" {
+			if taskWithDate.UpnextDescription != "" {
+				mostRecentDesc = taskWithDate.UpnextDescription
+			} else {
+				allDescs := taskWithDate.GetDescriptions()
+				if len(allDescs) > 0 {
+					mostRecentDesc = allDescs[len(allDescs)-1]
 				}
 			}
-			if taskWithDate.GithubPR != "" {
-				prLinks[taskWithDate.GithubPR] = true
+		}
+		if taskWithDate.GithubPR != "" {
+			prLinks[taskWithDate.GithubPR] = true
+		}
+	}
+
+	sb.WriteString(`<ul>`)
+	if mostRecentDesc != "" {
+		sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(mostRecentDesc)))
+	}
+	sb.WriteString(renderPRLinksHTML(prLinks))
+	sb.WriteString(`</ul></li>`)
+
+	return sb.String()
+}
+
+// renderNonFeatureNextUpSubEntryHTML renders a non-feature next up sub-entry.
+func renderNonFeatureNextUpSubEntryHTML(ticket string, taskList []model.TaskWithDate) string {
+	sort.Slice(taskList, func(i, j int) bool {
+		return taskList[i].Date < taskList[j].Date
+	})
+
+	var mostRecentDesc string
+	prLinks := make(map[string]bool)
+
+	for i := len(taskList) - 1; i >= 0; i-- {
+		taskWithDate := taskList[i]
+		if mostRecentDesc == "" {
+			if taskWithDate.UpnextDescription != "" {
+				mostRecentDesc = taskWithDate.UpnextDescription
+			} else {
+				allDescs := taskWithDate.GetDescriptions()
+				if len(allDescs) > 0 {
+					mostRecentDesc = allDescs[len(allDescs)-1]
+				}
 			}
 		}
+		if taskWithDate.GithubPR != "" {
+			prLinks[taskWithDate.GithubPR] = true
+		}
+	}
 
+	var sb strings.Builder
+	header := ticket
+	if header == "" {
+		header = "Misc"
+	}
+	sb.WriteString(fmt.Sprintf(`<li>%s`, html.EscapeString(header)))
+
+	if mostRecentDesc != "" || len(prLinks) > 0 {
 		sb.WriteString(`<ul>`)
 		if mostRecentDesc != "" {
 			sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(mostRecentDesc)))
 		}
 		sb.WriteString(renderPRLinksHTML(prLinks))
-		sb.WriteString(`</ul></li>`)
+		sb.WriteString(`</ul>`)
 	}
+	sb.WriteString(`</li>`)
 
-	// Render non-feature work at the end
-	if len(nonFeatureDescriptions) > 0 {
-		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, htmlNonFeatureWorkHeader))
-		sb.WriteString(`<ul>`)
-		for _, desc := range nonFeatureDescriptions {
-			sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
-		}
-		sb.WriteString(renderPRLinksHTML(nonFeaturePRLinks))
-		sb.WriteString(`</ul></li>`)
-	}
-
-	sb.WriteString(`</ul>`)
 	return sb.String()
 }
 
@@ -303,11 +371,11 @@ func renderBlockedTasksHTML(tasks []model.Task, jiraInfo map[string]jira.TicketI
 
 	// Separate feature work and non-feature work
 	var featureTasks []model.Task
-	var nonFeatureBlockers []string
+	var nonFeatureTasks []model.Task
 
 	for _, task := range tasks {
 		if IsNonFeatureWork(task.JiraTicket, task.GithubPR) {
-			nonFeatureBlockers = append(nonFeatureBlockers, task.Blocker)
+			nonFeatureTasks = append(nonFeatureTasks, task)
 		} else {
 			featureTasks = append(featureTasks, task)
 		}
@@ -325,12 +393,19 @@ func renderBlockedTasksHTML(tasks []model.Task, jiraInfo map[string]jira.TicketI
 		sb.WriteString(`</ul></li>`)
 	}
 
-	// Render non-feature work at the end
-	if len(nonFeatureBlockers) > 0 {
+	// Render non-feature work at the end (grouped under "Non-feature work" with sub-entries)
+	if len(nonFeatureTasks) > 0 {
 		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, htmlNonFeatureWorkHeader))
 		sb.WriteString(`<ul>`)
-		for _, blocker := range nonFeatureBlockers {
-			sb.WriteString(fmt.Sprintf(`<li>Blocker: %s</li>`, html.EscapeString(blocker)))
+		for _, task := range nonFeatureTasks {
+			header := task.JiraTicket
+			if header == "" {
+				header = "Misc"
+			}
+			sb.WriteString(fmt.Sprintf(`<li>%s`, html.EscapeString(header)))
+			sb.WriteString(`<ul>`)
+			sb.WriteString(fmt.Sprintf(`<li>Blocker: %s</li>`, html.EscapeString(task.Blocker)))
+			sb.WriteString(`</ul></li>`)
 		}
 		sb.WriteString(`</ul></li>`)
 	}
