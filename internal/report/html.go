@@ -19,10 +19,16 @@ const (
 )
 
 // GenerateHTML creates an HTML version of the report.
-func GenerateHTML(dates []string, completedTasks map[string][]model.TaskWithDate, nextUpTasks map[string][]model.TaskWithDate, blockedTasks []model.Task) string {
-	// Process JIRA tickets and fetch summaries
-	allTickets := collectAllTickets(completedTasks, nextUpTasks, blockedTasks)
-	jiraInfo := jira.ProcessTickets(allTickets)
+// If preloadedJiraInfo is provided (non-nil), it will be used instead of fetching from JIRA API.
+func GenerateHTML(dates []string, completedTasks map[string][]model.TaskWithDate, nextUpTasks map[string][]model.TaskWithDate, blockedTasks []model.Task, preloadedJiraInfo map[string]jira.TicketInfo) string {
+	// Use preloaded JIRA info if provided, otherwise fetch from API
+	var jiraInfo map[string]jira.TicketInfo
+	if preloadedJiraInfo != nil {
+		jiraInfo = preloadedJiraInfo
+	} else {
+		allTickets := collectAllTickets(completedTasks, nextUpTasks, blockedTasks)
+		jiraInfo = jira.ProcessTickets(allTickets)
+	}
 
 	var htmlBuilder strings.Builder
 
