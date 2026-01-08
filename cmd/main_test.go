@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/bryan-cox/taskledger/internal/model"
 )
 
 // --- Test Setup ---
@@ -308,7 +310,7 @@ func TestCreateInitialWorklog(t *testing.T) {
 		workData := createInitialWorklog(fixedDate)
 
 		// Collect all tasks from both days
-		var allTasks []Task
+		var allTasks []model.Task
 		for _, dailyLog := range workData {
 			allTasks = append(allTasks, dailyLog.Tasks...)
 		}
@@ -381,7 +383,7 @@ func TestCreateInitialWorklog(t *testing.T) {
 		workData := createInitialWorklog(fixedDate)
 
 		// Collect all tasks
-		var allTasks []Task
+		var allTasks []model.Task
 		for _, dailyLog := range workData {
 			allTasks = append(allTasks, dailyLog.Tasks...)
 		}
@@ -433,7 +435,7 @@ func TestGenerateInitialWorklogYAML(t *testing.T) {
 		}
 
 		// Verify it's valid YAML by unmarshaling it
-		var workData WorkData
+		var workData model.WorkData
 		err = yaml.Unmarshal(yamlData, &workData)
 		if err != nil {
 			t.Errorf("Generated YAML is not valid: %v", err)
@@ -448,7 +450,7 @@ func TestGenerateInitialWorklogYAML(t *testing.T) {
 		}
 
 		// Unmarshal back to WorkData
-		var workData WorkData
+		var workData model.WorkData
 		err = yaml.Unmarshal(yamlData, &workData)
 		if err != nil {
 			t.Fatalf("Failed to unmarshal generated YAML: %v", err)
@@ -520,7 +522,7 @@ func TestGenerateInitialWorklogYAML(t *testing.T) {
 		}
 
 		// Unmarshal back
-		var roundTrippedData WorkData
+		var roundTrippedData model.WorkData
 		err = yaml.Unmarshal(yamlData, &roundTrippedData)
 		if err != nil {
 			t.Fatalf("Failed to unmarshal: %v", err)
@@ -577,7 +579,7 @@ func TestInitCommandDataValidation(t *testing.T) {
 			t.Fatalf("Failed to generate YAML: %v", err)
 		}
 
-		var workData WorkData
+		var workData model.WorkData
 		err = yaml.Unmarshal(yamlData, &workData)
 		if err != nil {
 			t.Fatalf("Failed to unmarshal YAML: %v", err)
@@ -607,7 +609,7 @@ func TestInitCommandDataValidation(t *testing.T) {
 			t.Fatalf("Failed to generate YAML: %v", err)
 		}
 
-		var workData WorkData
+		var workData model.WorkData
 		err = yaml.Unmarshal(yamlData, &workData)
 		if err != nil {
 			t.Fatalf("Failed to unmarshal YAML: %v", err)
@@ -635,7 +637,7 @@ func TestInitCommandDataValidation(t *testing.T) {
 			t.Fatalf("Failed to generate YAML: %v", err)
 		}
 
-		var workData WorkData
+		var workData model.WorkData
 		err = yaml.Unmarshal(yamlData, &workData)
 		if err != nil {
 			t.Fatalf("Failed to unmarshal YAML: %v", err)
@@ -681,7 +683,7 @@ func TestInitCommandDataValidation(t *testing.T) {
 			t.Fatalf("Failed to generate YAML: %v", err)
 		}
 
-		var workData WorkData
+		var workData model.WorkData
 		err = yaml.Unmarshal(yamlData, &workData)
 		if err != nil {
 			t.Fatalf("Failed to unmarshal YAML: %v", err)
