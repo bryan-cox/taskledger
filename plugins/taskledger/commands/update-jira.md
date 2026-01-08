@@ -1,6 +1,6 @@
 ---
 description: Post work report comments to JIRA tickets from worklog.yml
-argument-hint: [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run]
+argument-hint: "[--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run]"
 ---
 
 ## Name
