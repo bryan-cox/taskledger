@@ -27,7 +27,8 @@
       "category": "utilities",
       "strict": false,
       "commands": [
-        "./commands/update-jira.md"
+        "./commands/update-jira.md",
+        "./commands/html-report.md"
       ]
     }
   ]
