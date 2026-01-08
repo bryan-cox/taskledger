@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/bryan-cox/taskledger/internal/clipboard"
+	"github.com/bryan-cox/taskledger/internal/jira"
 	"github.com/bryan-cox/taskledger/internal/model"
 	"github.com/bryan-cox/taskledger/internal/report"
 )
@@ -21,13 +22,14 @@ import (
 // --- CLI Flags ---
 
 var (
-	filePath  string
-	startDate string
-	endDate   string
-	copyHTML  bool
-	htmlFile  string
-	showHTML  bool
-	openHTML  bool
+	filePath      string
+	startDate     string
+	endDate       string
+	copyHTML      bool
+	htmlFile      string
+	showHTML      bool
+	openHTML      bool
+	jiraSummaries string
 )
 
 // --- Cobra Command Definitions ---
@@ -80,6 +82,7 @@ func init() {
 	reportCmd.Flags().StringVar(&htmlFile, "html-file", "", "Save the report as HTML to the specified file.")
 	reportCmd.Flags().BoolVar(&showHTML, "show-html", false, "Display the HTML content in the terminal.")
 	reportCmd.Flags().BoolVar(&openHTML, "open-html", false, "Automatically open the HTML file in the default browser after saving.")
+	reportCmd.Flags().StringVar(&jiraSummaries, "jira-summaries", "", "Path to JSON file with pre-fetched JIRA ticket summaries.")
 
 	rootCmd.AddCommand(hoursCmd)
 	rootCmd.AddCommand(reportCmd)
@@ -156,7 +159,16 @@ func runReportCommand(cmd *cobra.Command, args []string) {
 
 	// Handle HTML output options
 	if copyHTML || htmlFile != "" || showHTML || openHTML {
-		htmlContent := report.GenerateHTML(dates, tasks.Completed, tasks.NextUp, tasks.Blocked)
+		// Load pre-fetched JIRA summaries if provided
+		var jiraInfo map[string]jira.TicketInfo
+		if jiraSummaries != "" {
+			var err error
+			jiraInfo, err = jira.LoadSummariesFromFile(jiraSummaries)
+			if err != nil {
+				slog.Warn("failed to load JIRA summaries, will fetch from API", "error", err, "file", jiraSummaries)
+			}
+		}
+		htmlContent := report.GenerateHTML(dates, tasks.Completed, tasks.NextUp, tasks.Blocked, jiraInfo)
 		handleHTMLOutput(out, htmlContent)
 	}
 }

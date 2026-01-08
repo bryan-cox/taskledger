@@ -12,7 +12,7 @@ taskledger:html-report
 ```
 
 ## Description
-Generates an HTML work report using TaskLedger and opens it in the default browser. The report includes completed tasks, next up items, and blockers organized by JIRA ticket, with ticket summaries fetched from JIRA.
+Generates an HTML work report using TaskLedger and opens it in the default browser. The report includes completed tasks, next up items, and blockers organized by JIRA ticket, with ticket summaries fetched from JIRA via MCP.
 
 This command is useful for:
 - Generating weekly status reports for sharing in Slack
@@ -64,9 +64,44 @@ Execute the following workflow step by step:
 
 3. Verify JIRA MCP is available by attempting a simple query:
    - Use `mcp__atlassian__jira_get_all_projects` with a limit of 1
-   - If this fails, warn the user that ticket summaries will not be available
+   - If this fails, warn the user that ticket summaries will not be available and skip Phase 3
 
-### Phase 3: Build and Execute Command
+### Phase 3: Fetch JIRA Ticket Summaries
+
+1. Read the worklog file using the Read tool
+
+2. Parse the YAML content and extract all unique `jira_ticket` values that match the JIRA ticket pattern `[A-Z]+-[0-9]+`
+   - Extract ticket IDs from URLs like `https://issues.redhat.com/browse/PROJ-123`
+   - Extract ticket IDs from plain text like `PROJ-123` or `PROJ-123: description`
+   - Skip empty values and non-JIRA values like `NO-JIRA` or freeform text
+
+3. For each unique JIRA ticket ID found:
+   - Use `mcp__atlassian__jira_get_issue` to fetch the ticket info:
+     ```
+     issue_key: "{TICKET-ID}"
+     fields: "summary"
+     ```
+   - Extract the summary from the response
+
+4. Create a JSON object mapping ticket IDs to their info:
+   ```json
+   {
+     "PROJ-123": {
+       "Key": "PROJ-123",
+       "Summary": "The ticket summary from JIRA",
+       "URL": "https://issues.redhat.com/browse/PROJ-123"
+     },
+     "PROJ-456": {
+       "Key": "PROJ-456",
+       "Summary": "Another ticket summary",
+       "URL": "https://issues.redhat.com/browse/PROJ-456"
+     }
+   }
+   ```
+
+5. Write the JSON to a temporary file at `/tmp/jira-summaries.json` using the Write tool
+
+### Phase 4: Build and Execute Command
 
 1. Construct the TaskLedger command with all arguments:
    ```bash
@@ -75,14 +110,17 @@ Execute the following workflow step by step:
      --open-html \
      --start-date {start-date} \
      --end-date {end-date} \
-     --file {worklog-file}
+     --file {worklog-file} \
+     --jira-summaries /tmp/jira-summaries.json
    ```
+
+   Note: Omit `--jira-summaries` if Phase 3 was skipped (JIRA MCP unavailable)
 
 2. Execute the command using the Bash tool
 
 3. Capture the output for reporting
 
-### Phase 4: Report Results
+### Phase 5: Report Results
 
 1. If successful, inform the user:
    ```
@@ -91,6 +129,7 @@ Execute the following workflow step by step:
    Date Range: {start-date} to {end-date}
    Output File: {output-path}
    Worklog Source: {worklog-file}
+   JIRA Summaries: {number} tickets fetched
 
    The report has been opened in your default browser.
    You can copy the content and paste it directly into Slack.
@@ -107,6 +146,7 @@ Execute the following workflow step by step:
 - **Worklog file not found**: Show the path checked and suggest alternatives
 - **Invalid date format**: Show correct format example (YYYY-MM-DD)
 - **JIRA MCP not available**: Warn but continue (report will work without ticket summaries)
+- **JIRA ticket fetch failure**: Log warning and continue with remaining tickets
 - **TaskLedger execution error**: Display the error output from the command
 
 ## Examples
