@@ -1,6 +1,6 @@
 ---
 description: Post work report comments to JIRA tickets from worklog.yml
-argument-hint: [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run]
+argument-hint: [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run]
 ---
 
 ## Name
@@ -8,11 +8,11 @@ update-jira
 
 ## Synopsis
 ```
-/update-jira [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run]
+/update-jira [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run]
 ```
 
 ## Description
-Reads the worklog.yml file in the current directory, generates a formatted status update comment for each JIRA ticket referenced in the tasks, checks for duplicate comments to avoid spam, and posts the updates to JIRA using the Atlassian MCP server.
+Reads a worklog.yml file, generates a formatted status update comment for each JIRA ticket referenced in the tasks, checks for duplicate comments to avoid spam, and posts the updates to JIRA using the Atlassian MCP server.
 
 This command is useful for:
 - Keeping JIRA tickets updated with work progress
@@ -21,7 +21,7 @@ This command is useful for:
 
 ## Prerequisites
 - The Atlassian JIRA MCP server must be configured and accessible
-- A valid `worklog.yml` file must exist in the current working directory
+- A valid `worklog.yml` file must exist (either at the specified path or in the current working directory)
 
 ## Implementation
 
@@ -30,17 +30,18 @@ Execute the following workflow step by step:
 ### Phase 1: Parse Arguments
 
 1. Extract optional arguments from $ARGUMENTS:
+   - `--file PATH`: Path to worklog.yml file (defaults to `./worklog.yml` in current directory)
    - `--start-date YYYY-MM-DD`: Start of date range (defaults to today)
    - `--end-date YYYY-MM-DD`: End of date range (defaults to today)
    - `--dry-run`: Preview mode - show what would be posted without actually posting
 
 2. Validate date formats if provided (must be YYYY-MM-DD)
 
-3. Store the dry-run flag for later use
+3. Store the file path and dry-run flag for later use
 
 ### Phase 2: Load and Parse worklog.yml
 
-1. Read the file `worklog.yml` from the current working directory using the Read tool
+1. Read the worklog.yml file from the specified path (or current directory if not specified) using the Read tool
 
 2. Parse the YAML content. The structure is:
    ```yaml
@@ -228,8 +229,21 @@ If user confirms with "yes" or "all":
    ```
    Posts comments from Jan 1 to today.
 
+5. **Use a worklog file from a different location**:
+   ```
+   /update-jira --file ~/worklog/worklog.yaml
+   ```
+   Uses the worklog file from the specified path.
+
+6. **Combine file path with date range**:
+   ```
+   /update-jira --file /path/to/worklog.yml --start-date 2025-01-06 --end-date 2025-01-07 --dry-run
+   ```
+   Preview comments for a specific date range using a custom worklog file.
+
 ## Arguments
 
+- `--file` *(optional)*: Path to the worklog.yml file. Defaults to `./worklog.yml` in the current directory. Can be an absolute or relative path.
 - `--start-date` *(optional)*: Start of date range in YYYY-MM-DD format. Defaults to today.
 - `--end-date` *(optional)*: End of date range in YYYY-MM-DD format. Defaults to today.
 - `--dry-run` *(optional)*: Preview mode. Shows what would be posted without actually posting to JIRA.
