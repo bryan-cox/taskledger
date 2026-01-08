@@ -20,9 +20,9 @@ This command is useful for:
 - Documenting work progress in an easy-to-share format
 
 ## Prerequisites
-- The Atlassian JIRA MCP server must be configured and accessible (for fetching ticket summaries)
 - TaskLedger binary must be built and available at `~/bryan-cox/taskledger/bin/taskledger`
 - A valid worklog.yml file must exist
+- The Atlassian JIRA MCP server should be configured (for fetching ticket summaries)
 
 ## Implementation
 
@@ -62,20 +62,20 @@ Execute the following workflow step by step:
    Please check the file path or create a worklog file.
    ```
 
-3. Verify JIRA MCP is available by attempting a simple query:
-   - Use `mcp__atlassian__jira_get_all_projects` with a limit of 1
-   - If this fails, warn the user that ticket summaries will not be available and skip Phase 3
-
 ### Phase 3: Fetch JIRA Ticket Summaries
 
-1. Read the worklog file using the Read tool
+1. Use Grep to extract only the `jira_ticket` lines from the worklog file for the specified date range:
+   ```bash
+   grep -A 100 "^{start-date}:" {worklog-file} | grep -B 100 "^{end-date}:" | grep "jira_ticket:"
+   ```
 
-2. Parse the YAML content and extract all unique `jira_ticket` values that match the JIRA ticket pattern `[A-Z]+-[0-9]+`
-   - Extract ticket IDs from URLs like `https://issues.redhat.com/browse/PROJ-123`
-   - Extract ticket IDs from plain text like `PROJ-123` or `PROJ-123: description`
-   - Skip empty values and non-JIRA values like `NO-JIRA` or freeform text
+   Or if dates are the same (single day), just grep that date section.
 
-3. For each unique JIRA ticket ID found:
+2. From the grep output, extract unique JIRA ticket IDs matching the pattern `[A-Z]+-[0-9]+`
+   - Skip empty values, `NO-JIRA`, and freeform text
+   - Deduplicate the ticket IDs
+
+3. For each unique JIRA ticket ID found (typically just 1-5 tickets):
    - Use `mcp__atlassian__jira_get_issue` to fetch the ticket info:
      ```
      issue_key: "{TICKET-ID}"
@@ -135,17 +135,11 @@ Execute the following workflow step by step:
    You can copy the content and paste it directly into Slack.
    ```
 
-2. If there were any warnings (e.g., JIRA MCP not available), include them:
-   ```
-   Note: JIRA ticket summaries may not be included (MCP not available)
-   ```
-
 ## Error Handling
 
 - **TaskLedger binary not found**: Display build instructions
 - **Worklog file not found**: Show the path checked and suggest alternatives
 - **Invalid date format**: Show correct format example (YYYY-MM-DD)
-- **JIRA MCP not available**: Warn but continue (report will work without ticket summaries)
 - **JIRA ticket fetch failure**: Log warning and continue with remaining tickets
 - **TaskLedger execution error**: Display the error output from the command
 
