@@ -1,0 +1,13 @@
+{
+  "name": "taskledger",
+  "owner": {
+    "name": "Bryan Cox"
+  },
+  "plugins": [
+    {
+      "name": "taskledger",
+      "source": "./plugins/taskledger",
+      "description": "Track work progress and sync status updates to JIRA tickets from worklog.yml files"
+    }
+  ]
+}
