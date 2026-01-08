@@ -177,15 +177,18 @@ func TestReportCommand(t *testing.T) {
 		if !strings.Contains(output, "PR(s): https://github.com/example/repo/pull/123") {
 			t.Error("Report missing GitHub PR link")
 		}
-		// Check for tasks without Jira tickets
-		if !strings.Contains(output, "• Organized project documentation and created initial README.") {
-			t.Error("Report should include completed task that has no Jira ticket")
+		// Check for non-feature work grouping (tasks without Jira tickets)
+		if !strings.Contains(output, "• Non-feature work:") {
+			t.Error("Report should include 'Non-feature work' header for tasks without Jira tickets")
 		}
-		if !strings.Contains(output, "• Updated team wiki with new development processes.") {
-			t.Error("Report should include completed task that has no Jira ticket")
+		if !strings.Contains(output, "◦ Organized project documentation and created initial README.") {
+			t.Error("Report should include completed task that has no Jira ticket under Non-feature work")
 		}
-		if !strings.Contains(output, "• Run linter and fix all warnings") {
-			t.Error("Report should include next up task that has no Jira ticket")
+		if !strings.Contains(output, "◦ Updated team wiki with new development processes.") {
+			t.Error("Report should include completed task that has no Jira ticket under Non-feature work")
+		}
+		if !strings.Contains(output, "◦ Run linter and fix all warnings") {
+			t.Error("Report should include next up task that has no Jira ticket under Non-feature work")
 		}
 		// Check for PR links for tasks without Jira tickets
 		if !strings.Contains(output, "PR(s): https://github.com/example/repo/pull/456") {
