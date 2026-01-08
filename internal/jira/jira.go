@@ -131,6 +131,33 @@ func ProcessTickets(tickets map[string][]model.TaskWithDate) map[string]TicketIn
 	return jiraInfo
 }
 
+// LoadSummariesFromFile loads JIRA ticket summaries from a JSON file.
+// The file should contain a map of ticket IDs to TicketInfo objects.
+func LoadSummariesFromFile(filePath string) (map[string]TicketInfo, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read JIRA summaries file: %w", err)
+	}
+
+	var summaries map[string]TicketInfo
+	if err := json.Unmarshal(data, &summaries); err != nil {
+		return nil, fmt.Errorf("failed to parse JIRA summaries JSON: %w", err)
+	}
+
+	// Ensure URLs are set for all tickets
+	for key, info := range summaries {
+		if info.URL == "" {
+			info.URL = fmt.Sprintf("%s/browse/%s", BaseURL, info.Key)
+		}
+		if info.Key == "" {
+			info.Key = key
+		}
+		summaries[key] = info
+	}
+
+	return summaries, nil
+}
+
 // FormatTicketHTML formats a JIRA ticket reference as HTML with optional summary.
 func FormatTicketHTML(ticketReference string, jiraInfo map[string]TicketInfo) string {
 	ticketID := ExtractTicketID(ticketReference)
