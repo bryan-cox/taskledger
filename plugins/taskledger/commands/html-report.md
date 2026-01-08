@@ -4,11 +4,11 @@ argument-hint: "[--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] 
 ---
 
 ## Name
-html-report
+taskledger:html-report
 
 ## Synopsis
 ```
-/html-report [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--output PATH]
+/taskledger:html-report [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--output PATH]
 ```
 
 ## Description

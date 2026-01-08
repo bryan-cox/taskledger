@@ -4,11 +4,11 @@ argument-hint: "[--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] 
 ---
 
 ## Name
-update-jira
+taskledger:update-jira
 
 ## Synopsis
 ```
-/update-jira [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run]
+/taskledger:update-jira [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run]
 ```
 
 ## Description
