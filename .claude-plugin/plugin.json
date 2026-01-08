@@ -1,0 +1,8 @@
+{
+  "name": "taskledger",
+  "description": "Track work progress and sync status updates to JIRA tickets from worklog.yml files",
+  "version": "0.1.0",
+  "author": {
+    "name": "Bryan Cox"
+  }
+}

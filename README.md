@@ -316,3 +316,72 @@ If you leave `jira_ticket` empty or use the same value for unrelated tasks, Task
 - `github_pr`: GitHub pull request URL
 - `upnext_description`: Specific description for next up tasks
 - `blocker`: Description of what's blocking the task (if any)
+
+## Claude Code Plugin
+
+TaskLedger includes a Claude Code plugin that enables automatic JIRA ticket updates directly from your worklog.
+
+### Installation
+
+Install the plugin from the Claude Code marketplace:
+
+```bash
+claude plugins add taskledger
+```
+
+Or install directly from the repository:
+
+```bash
+claude plugins add github:bryan-cox/taskledger
+```
+
+### Prerequisites
+
+- Claude Code CLI installed
+- Atlassian JIRA MCP server configured (provides JIRA API access)
+
+### Commands
+
+#### `/update-jira`
+
+Post work report comments to JIRA tickets from your worklog.yml file.
+
+```bash
+# Preview what would be posted (dry run)
+/update-jira --dry-run
+
+# Update tickets for today
+/update-jira
+
+# Update tickets for a specific date range
+/update-jira --start-date 2025-01-06 --end-date 2025-01-07
+```
+
+**Features:**
+- Reads tasks from worklog.yml and groups by JIRA ticket
+- Generates formatted comments in Jira wiki markup
+- Checks for duplicate comments to avoid spam
+- Shows preview and asks for confirmation before posting
+- Includes work completed, PRs, next steps, and blockers
+
+**Comment Format:**
+```
+h2. Status Update: 2025-01-06 to 2025-01-07
+
+*Work Completed:*
+* Implemented feature X
+* Fixed bug in Y component
+
+*Pull Requests:*
+* [PR #123|https://github.com/org/repo/pull/123]
+
+*Next Steps:* Complete unit tests and submit for review
+
+----
+_Generated via TaskLedger /update-jira_
+```
+
+**Arguments:**
+- `--start-date YYYY-MM-DD`: Start of date range (defaults to today)
+- `--end-date YYYY-MM-DD`: End of date range (defaults to today)
+- `--dry-run`: Preview mode - shows what would be posted without actually posting
