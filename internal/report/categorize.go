@@ -7,6 +7,20 @@ import (
 	"github.com/bryan-cox/taskledger/internal/model"
 )
 
+// IsNonFeatureWork returns true if the task should be grouped under "Non-feature work".
+// A task is non-feature work if:
+// - jira_ticket is empty, OR
+// - jira_ticket contains "NO-JIRA" AND github_pr is empty
+func IsNonFeatureWork(ticket string, githubPR string) bool {
+	if ticket == "" {
+		return true
+	}
+	if strings.Contains(strings.ToUpper(ticket), "NO-JIRA") && githubPR == "" {
+		return true
+	}
+	return false
+}
+
 // emptyTicketKey is a placeholder key for tasks without JIRA tickets.
 const emptyTicketKey = "__empty__"
 

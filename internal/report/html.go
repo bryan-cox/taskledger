@@ -12,9 +12,10 @@ import (
 
 // Section headers for HTML output.
 const (
-	htmlHeaderCompleted = `<h2>🦀 Things I've been working on</h2>`
-	htmlHeaderNextUp    = `<h2>⭐ Things I plan on working on next</h2>`
-	htmlHeaderBlocked   = `<h2>🚫 Things that are blocking me</h2>`
+	htmlHeaderCompleted      = `<h2>🦀 Things I've been working on</h2>`
+	htmlHeaderNextUp         = `<h2>⭐ Things I plan on working on next</h2>`
+	htmlHeaderBlocked        = `<h2>🚫 Things that are blocking me</h2>`
+	htmlNonFeatureWorkHeader = `Non-feature work`
 )
 
 // GenerateHTML creates an HTML version of the report.
@@ -98,51 +99,79 @@ func renderCompletedTasksHTML(tasks map[string][]model.TaskWithDate, jiraInfo ma
 	sb.WriteString(htmlHeaderCompleted)
 	sb.WriteString(`<ul>`)
 
-	var tickets []string
-	for t := range tasks {
-		tickets = append(tickets, t)
-	}
-	sort.Strings(tickets)
+	// Separate feature work and non-feature work
+	var featureTickets []string
+	var nonFeatureDescriptions []string
+	nonFeaturePRLinks := make(map[string]bool)
 
-	for _, ticket := range tickets {
+	for ticket := range tasks {
+		taskList := tasks[ticket]
+		// Check if any task in the group has a PR (for NO-JIRA check)
+		hasPR := false
+		for _, t := range taskList {
+			if t.GithubPR != "" {
+				hasPR = true
+				break
+			}
+		}
+
+		if IsNonFeatureWork(ticket, func() string {
+			if hasPR {
+				return "has-pr"
+			}
+			return ""
+		}()) {
+			// Collect non-feature work descriptions and PRs
+			for _, taskWithDate := range taskList {
+				nonFeatureDescriptions = append(nonFeatureDescriptions, taskWithDate.GetDescriptions()...)
+				if taskWithDate.GithubPR != "" {
+					nonFeaturePRLinks[taskWithDate.GithubPR] = true
+				}
+			}
+		} else {
+			featureTickets = append(featureTickets, ticket)
+		}
+	}
+	sort.Strings(featureTickets)
+
+	// Render feature work first
+	for _, ticket := range featureTickets {
 		taskList := tasks[ticket]
 		sort.Slice(taskList, func(i, j int) bool {
 			return taskList[i].Date < taskList[j].Date
 		})
 
-		if ticket != "" {
-			sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, jira.FormatTicketHTML(ticket, jiraInfo)))
+		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, jira.FormatTicketHTML(ticket, jiraInfo)))
 
-			var descriptions []string
-			prLinks := make(map[string]bool)
+		var descriptions []string
+		prLinks := make(map[string]bool)
 
-			for _, taskWithDate := range taskList {
-				descriptions = append(descriptions, taskWithDate.GetDescriptions()...)
-				if taskWithDate.GithubPR != "" {
-					prLinks[taskWithDate.GithubPR] = true
-				}
+		for _, taskWithDate := range taskList {
+			descriptions = append(descriptions, taskWithDate.GetDescriptions()...)
+			if taskWithDate.GithubPR != "" {
+				prLinks[taskWithDate.GithubPR] = true
 			}
-
-			sb.WriteString(`<ul>`)
-			for _, desc := range descriptions {
-				sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
-			}
-			sb.WriteString(renderPRLinksHTML(prLinks))
-			sb.WriteString(`</ul></li>`)
-		} else {
-			sb.WriteString(`<li><ul>`)
-			for _, taskWithDate := range taskList {
-				for _, desc := range taskWithDate.GetDescriptions() {
-					sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
-				}
-				if taskWithDate.GithubPR != "" {
-					sb.WriteString(fmt.Sprintf(`<li>PR: <a href="%s">%s</a></li>`,
-						html.EscapeString(taskWithDate.GithubPR), html.EscapeString(taskWithDate.GithubPR)))
-				}
-			}
-			sb.WriteString(`</ul></li>`)
 		}
+
+		sb.WriteString(`<ul>`)
+		for _, desc := range descriptions {
+			sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
+		}
+		sb.WriteString(renderPRLinksHTML(prLinks))
+		sb.WriteString(`</ul></li>`)
 	}
+
+	// Render non-feature work at the end
+	if len(nonFeatureDescriptions) > 0 {
+		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, htmlNonFeatureWorkHeader))
+		sb.WriteString(`<ul>`)
+		for _, desc := range nonFeatureDescriptions {
+			sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
+		}
+		sb.WriteString(renderPRLinksHTML(nonFeaturePRLinks))
+		sb.WriteString(`</ul></li>`)
+	}
+
 	sb.WriteString(`</ul>`)
 	return sb.String()
 }
@@ -157,50 +186,34 @@ func renderNextUpTasksHTML(tasks map[string][]model.TaskWithDate, jiraInfo map[s
 	sb.WriteString(htmlHeaderNextUp)
 	sb.WriteString(`<ul>`)
 
-	var tickets []string
+	// Separate feature work and non-feature work
+	var featureTickets []string
+	var nonFeatureDescriptions []string
+	nonFeaturePRLinks := make(map[string]bool)
+
 	for ticket := range tasks {
-		tickets = append(tickets, ticket)
-	}
-	sort.Strings(tickets)
-
-	for _, ticket := range tickets {
 		taskList := tasks[ticket]
-		sort.Slice(taskList, func(i, j int) bool {
-			return taskList[i].Date < taskList[j].Date
-		})
+		// Check if any task in the group has a PR (for NO-JIRA check)
+		hasPR := false
+		for _, t := range taskList {
+			if t.GithubPR != "" {
+				hasPR = true
+				break
+			}
+		}
 
-		if ticket != "" {
-			sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, jira.FormatTicketHTML(ticket, jiraInfo)))
-
-			var mostRecentDesc string
-			prLinks := make(map[string]bool)
-
+		if IsNonFeatureWork(ticket, func() string {
+			if hasPR {
+				return "has-pr"
+			}
+			return ""
+		}()) {
+			// Collect non-feature work descriptions (most recent per ticket group)
+			sort.Slice(taskList, func(i, j int) bool {
+				return taskList[i].Date < taskList[j].Date
+			})
 			for i := len(taskList) - 1; i >= 0; i-- {
 				taskWithDate := taskList[i]
-				if mostRecentDesc == "" {
-					if taskWithDate.UpnextDescription != "" {
-						mostRecentDesc = taskWithDate.UpnextDescription
-					} else {
-						allDescs := taskWithDate.GetDescriptions()
-						if len(allDescs) > 0 {
-							mostRecentDesc = allDescs[len(allDescs)-1]
-						}
-					}
-				}
-				if taskWithDate.GithubPR != "" {
-					prLinks[taskWithDate.GithubPR] = true
-				}
-			}
-
-			sb.WriteString(`<ul>`)
-			if mostRecentDesc != "" {
-				sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(mostRecentDesc)))
-			}
-			sb.WriteString(renderPRLinksHTML(prLinks))
-			sb.WriteString(`</ul></li>`)
-		} else {
-			if len(taskList) > 0 {
-				taskWithDate := taskList[len(taskList)-1]
 				var desc string
 				if taskWithDate.UpnextDescription != "" {
 					desc = taskWithDate.UpnextDescription
@@ -210,17 +223,68 @@ func renderNextUpTasksHTML(tasks map[string][]model.TaskWithDate, jiraInfo map[s
 						desc = allDescs[len(allDescs)-1]
 					}
 				}
-
-				sb.WriteString(`<li><ul>`)
-				sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
-				if taskWithDate.GithubPR != "" {
-					sb.WriteString(fmt.Sprintf(`<li>PR: <a href="%s">%s</a></li>`,
-						html.EscapeString(taskWithDate.GithubPR), html.EscapeString(taskWithDate.GithubPR)))
+				if desc != "" {
+					nonFeatureDescriptions = append(nonFeatureDescriptions, desc)
+					break
 				}
-				sb.WriteString(`</ul></li>`)
+				if taskWithDate.GithubPR != "" {
+					nonFeaturePRLinks[taskWithDate.GithubPR] = true
+				}
 			}
+		} else {
+			featureTickets = append(featureTickets, ticket)
 		}
 	}
+	sort.Strings(featureTickets)
+
+	// Render feature work first
+	for _, ticket := range featureTickets {
+		taskList := tasks[ticket]
+		sort.Slice(taskList, func(i, j int) bool {
+			return taskList[i].Date < taskList[j].Date
+		})
+
+		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, jira.FormatTicketHTML(ticket, jiraInfo)))
+
+		var mostRecentDesc string
+		prLinks := make(map[string]bool)
+
+		for i := len(taskList) - 1; i >= 0; i-- {
+			taskWithDate := taskList[i]
+			if mostRecentDesc == "" {
+				if taskWithDate.UpnextDescription != "" {
+					mostRecentDesc = taskWithDate.UpnextDescription
+				} else {
+					allDescs := taskWithDate.GetDescriptions()
+					if len(allDescs) > 0 {
+						mostRecentDesc = allDescs[len(allDescs)-1]
+					}
+				}
+			}
+			if taskWithDate.GithubPR != "" {
+				prLinks[taskWithDate.GithubPR] = true
+			}
+		}
+
+		sb.WriteString(`<ul>`)
+		if mostRecentDesc != "" {
+			sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(mostRecentDesc)))
+		}
+		sb.WriteString(renderPRLinksHTML(prLinks))
+		sb.WriteString(`</ul></li>`)
+	}
+
+	// Render non-feature work at the end
+	if len(nonFeatureDescriptions) > 0 {
+		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, htmlNonFeatureWorkHeader))
+		sb.WriteString(`<ul>`)
+		for _, desc := range nonFeatureDescriptions {
+			sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
+		}
+		sb.WriteString(renderPRLinksHTML(nonFeaturePRLinks))
+		sb.WriteString(`</ul></li>`)
+	}
+
 	sb.WriteString(`</ul>`)
 	return sb.String()
 }
@@ -231,16 +295,40 @@ func renderBlockedTasksHTML(tasks []model.Task, jiraInfo map[string]jira.TicketI
 		return ""
 	}
 
+	// Separate feature work and non-feature work
+	var featureTasks []model.Task
+	var nonFeatureBlockers []string
+
+	for _, task := range tasks {
+		if IsNonFeatureWork(task.JiraTicket, task.GithubPR) {
+			nonFeatureBlockers = append(nonFeatureBlockers, task.Blocker)
+		} else {
+			featureTasks = append(featureTasks, task)
+		}
+	}
+
 	var sb strings.Builder
 	sb.WriteString(htmlHeaderBlocked)
 	sb.WriteString(`<ul>`)
 
-	for _, task := range tasks {
+	// Render feature work first
+	for _, task := range featureTasks {
 		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, jira.FormatTicketHTML(task.JiraTicket, jiraInfo)))
 		sb.WriteString(`<ul>`)
 		sb.WriteString(fmt.Sprintf(`<li>Blocker: %s</li>`, html.EscapeString(task.Blocker)))
 		sb.WriteString(`</ul></li>`)
 	}
+
+	// Render non-feature work at the end
+	if len(nonFeatureBlockers) > 0 {
+		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, htmlNonFeatureWorkHeader))
+		sb.WriteString(`<ul>`)
+		for _, blocker := range nonFeatureBlockers {
+			sb.WriteString(fmt.Sprintf(`<li>Blocker: %s</li>`, html.EscapeString(blocker)))
+		}
+		sb.WriteString(`</ul></li>`)
+	}
+
 	sb.WriteString(`</ul>`)
 	return sb.String()
 }
