@@ -33,6 +33,7 @@ go test -v ./...
 
 # Run tests in specific package
 go test -v ./cmd
+go test -v ./internal/report
 
 # Run a single test
 go test -v ./cmd -run TestReportCommand
@@ -40,55 +41,64 @@ go test -v ./cmd -run TestReportCommand
 
 ## Code Architecture
 
-### Single-File Architecture
+### Package Structure
 
-The entire application is contained in `cmd/main.go` (~950 lines). This is intentional for simplicity - there are no internal packages or complex module structure.
+```
+taskledger/
+├── cmd/
+│   ├── main.go           # CLI entry point, Cobra commands, orchestration
+│   └── main_test.go      # Integration tests for CLI commands
+├── internal/
+│   ├── model/
+│   │   └── model.go      # Core data structures (Task, WorkLog, etc.)
+│   ├── jira/
+│   │   └── jira.go       # JIRA API client and ticket formatting
+│   ├── report/
+│   │   ├── categorize.go # Task categorization logic
+│   │   ├── text.go       # Text report rendering
+│   │   └── html.go       # HTML report rendering
+│   └── clipboard/
+│       └── clipboard.go  # Platform-specific clipboard operations
+├── CLAUDE.md
+├── Makefile
+└── go.mod
+```
 
-### Core Components
+### Package Responsibilities
 
-1. **Data Structures** (lines 22-53):
-   - `WorkLog`: Time entries with start/end times
-   - `Task`: Work items with status, description, JIRA ticket, PR links, blockers
-   - `DailyLog`: Combines work logs and tasks for a single date
-   - `WorkData`: Top-level map of date strings to DailyLog
-   - `TaskWithDate`: Extends Task with date information for sorting/grouping
+#### `internal/model`
+Core data structures shared across the application:
+- `WorkLog`: Time entries with start/end times
+- `Task`: Work items with status, description, JIRA ticket, PR links, blockers
+- `TaskWithDate`: Extends Task with date for sorting/grouping
+- `DailyLog`: Combines work logs and tasks for a single date
+- `WorkData`: Top-level map of date strings to DailyLog
+- `CategorizedTasks`: Holds tasks organized by report section (completed/next up/blocked)
+- Status constants: `StatusCompleted`, `StatusInProgress`, `StatusNotStarted`
 
-2. **JIRA Integration** (lines 55-193):
-   - Red Hat JIRA-specific (issues.redhat.com)
-   - Uses regex patterns to extract ticket IDs from text or URLs
-   - Fetches ticket summaries via REST API when `JIRA_PAT` env var is set
-   - Falls back to basic links without summaries if PAT is missing
-   - `processJiraTickets()`: Batch fetches ticket info for all tickets in a report
-   - `formatJiraTicketHTML()`: Creates HTML links with optional summaries
+#### `internal/jira`
+Red Hat JIRA integration (issues.redhat.com):
+- `ExtractTicketID()`: Extract ticket IDs from URLs or text using regex
+- `FetchTicketSummary()`: Fetch ticket info via REST API when `JIRA_PAT` is set
+- `ProcessTickets()`: Batch fetch ticket info for all tickets in a report
+- `FormatTicketHTML()`: Create HTML links with optional summaries
 
-3. **Cobra Commands** (lines 195-258):
-   - `rootCmd`: Base command with persistent --file flag
-   - `hoursCmd`: Calculate hours worked with --start-date and --end-date flags
-   - `reportCmd`: Generate reports with date range and HTML output options
-     - `--html-file`: Save HTML to file
-     - `--open-html`: Auto-open HTML in browser
-     - `--copy-html`: Copy HTML to clipboard
-     - `--show-html`: Display HTML source in terminal
+#### `internal/report`
+Report generation and rendering:
+- `CategorizeTasks()`: Groups tasks into completed, next up, and blocked categories
+- `PrintCompletedTasks()`, `PrintNextUpTasks()`, `PrintBlockedTasks()`: Text rendering
+- `GenerateHTML()`: HTML report generation with JIRA integration
 
-4. **Report Generation Logic** (lines 305-426):
-   - Task categorization by status and blockers
-   - Groups tasks by `jira_ticket` field (which serves as unique identifier)
-   - Three sections:
-     - **Completed**: Tasks with "completed" status OR "in progress" + description
-     - **Next Up**: Tasks with `upnext_description` where most recent status is not "completed"
-     - **Blocked**: Tasks where most recent entry has a blocker
-   - Tracks "most recent task" per JIRA ticket to determine current status
+#### `internal/clipboard`
+Platform-specific clipboard operations:
+- `CopyHTML()`: Copy HTML to clipboard on macOS, Linux (Wayland/X11), Windows
 
-5. **HTML Generation** (lines 526-727):
-   - Simplified HTML structure for Slack compatibility
-   - Uses nested `<ul>` and `<li>` tags (no complex CSS)
-   - Processes JIRA tickets to fetch summaries before rendering
-   - Includes clickable JIRA and GitHub PR links
-
-6. **Platform-Specific Clipboard** (lines 433-506):
-   - macOS: Uses osascript with HTML class
-   - Linux: Tries wl-copy (Wayland), xclip, xsel (X11)
-   - Windows: PowerShell clipboard commands
+#### `cmd/main.go`
+CLI orchestration (~380 lines):
+- Cobra command definitions (`hours`, `report`, `init`)
+- Flag parsing and validation
+- Data loading and date range handling
+- HTML output handling (save, display, clipboard, browser)
 
 ### Important Behavioral Details
 
@@ -96,11 +106,11 @@ The entire application is contained in `cmd/main.go` (~950 lines). This is inten
 The `jira_ticket` field is the **unique identifier** for grouping related tasks across dates. Multiple entries with the same `jira_ticket` value are treated as updates to the same work item. The most recent task entry (by date) determines the current status for filtering "next up" and "blocked" sections.
 
 **Status Progression Tracking**:
-- `mostRecentTasks` map (line 321) tracks the latest task for each jira_ticket
-- "Next up" tasks are filtered to only show tickets where the most recent status is "in progress" or "not started" (lines 355-362)
+- The categorization logic in `report.CategorizeTasks()` tracks the latest task for each jira_ticket
+- "Next up" tasks are filtered to only show tickets where the most recent status is "in progress" or "not started"
 - This prevents completed tasks from appearing in future planning sections
 
-**Completed Tasks Logic** (lines 335-338):
+**Completed Tasks Logic**:
 Tasks appear in the "completed" section if they have:
 - Status = "completed", OR
 - Status = "in progress" + non-empty description (representing actual work done)
