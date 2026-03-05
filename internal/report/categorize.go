@@ -2,6 +2,7 @@
 package report
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/bryan-cox/taskledger/internal/jira"
@@ -19,6 +20,10 @@ func IsNonFeatureWork(ticket string, githubPR string) bool {
 	if ticket == "" {
 		return true
 	}
+	// Synthetic keys from categorization are always non-feature work
+	if IsSyntheticKey(ticket) {
+		return true
+	}
 	// NO-JIRA items: non-feature only if no PR, otherwise feature work
 	if strings.Contains(strings.ToUpper(ticket), "NO-JIRA") {
 		return githubPR == ""
@@ -30,8 +35,11 @@ func IsNonFeatureWork(ticket string, githubPR string) bool {
 	return false
 }
 
-// emptyTicketKey is a placeholder key for tasks without JIRA tickets.
-const emptyTicketKey = "__empty__"
+// IsSyntheticKey returns true if the key is a generated grouping key (not a real ticket name).
+// Synthetic keys are used for tasks without JIRA tickets, grouped by PR URL or unique counter.
+func IsSyntheticKey(key string) bool {
+	return strings.HasPrefix(key, "__noticket_") || strings.HasPrefix(key, "http://") || strings.HasPrefix(key, "https://")
+}
 
 // CategorizeTasks groups tasks from the work data into completed, next up, and blocked categories.
 func CategorizeTasks(workData model.WorkData, dates []string) model.CategorizedTasks {
@@ -39,6 +47,7 @@ func CategorizeTasks(workData model.WorkData, dates []string) model.CategorizedT
 	allNextUpTasks := make(map[string][]model.TaskWithDate)
 	mostRecentTasks := make(map[string]model.TaskWithDate)
 
+	emptyCounter := 0
 	for _, date := range dates {
 		dailyLog, exists := workData[date]
 		if !exists {
@@ -48,38 +57,42 @@ func CategorizeTasks(workData model.WorkData, dates []string) model.CategorizedT
 			taskWithDate := model.TaskWithDate{Task: task, Date: date}
 			jiraTicket := task.JiraTicket
 
+			// Compute grouping key: for tasks without a JIRA ticket, group by PR URL
+			// or assign a unique key so they don't all merge under one entry
+			groupKey := jiraTicket
+			if jiraTicket == "" {
+				if task.GithubPR != "" {
+					groupKey = task.GithubPR
+				} else {
+					groupKey = fmt.Sprintf("__noticket_%d__", emptyCounter)
+					emptyCounter++
+				}
+			}
+
 			// Track completed tasks - include both completed and in-progress tasks with descriptions
 			if strings.EqualFold(task.Status, model.StatusCompleted) ||
 				(strings.EqualFold(task.Status, model.StatusInProgress) && len(task.GetDescriptions()) > 0) {
-				completedTasks[jiraTicket] = append(completedTasks[jiraTicket], taskWithDate)
+				completedTasks[groupKey] = append(completedTasks[groupKey], taskWithDate)
 			}
 
 			// Collect all tasks with upnext descriptions
 			if task.UpnextDescription != "" {
-				allNextUpTasks[jiraTicket] = append(allNextUpTasks[jiraTicket], taskWithDate)
+				allNextUpTasks[groupKey] = append(allNextUpTasks[groupKey], taskWithDate)
 			}
 
-			// Track most recent task per Jira ticket
-			taskKey := jiraTicket
-			if taskKey == "" {
-				taskKey = emptyTicketKey
-			}
-			if existing, exists := mostRecentTasks[taskKey]; !exists || date > existing.Date {
-				mostRecentTasks[taskKey] = taskWithDate
+			// Track most recent task per group
+			if existing, exists := mostRecentTasks[groupKey]; !exists || date > existing.Date {
+				mostRecentTasks[groupKey] = taskWithDate
 			}
 		}
 	}
 
 	// Filter next up tasks: only include tickets where the most recent task is still in progress or not started
 	nextUpTasks := make(map[string][]model.TaskWithDate)
-	for jiraTicket, taskList := range allNextUpTasks {
-		taskKey := jiraTicket
-		if taskKey == "" {
-			taskKey = emptyTicketKey
-		}
-		if mostRecent, exists := mostRecentTasks[taskKey]; exists {
+	for groupKey, taskList := range allNextUpTasks {
+		if mostRecent, exists := mostRecentTasks[groupKey]; exists {
 			if strings.EqualFold(mostRecent.Status, model.StatusInProgress) || strings.EqualFold(mostRecent.Status, model.StatusNotStarted) {
-				nextUpTasks[jiraTicket] = taskList
+				nextUpTasks[groupKey] = taskList
 			}
 		}
 	}

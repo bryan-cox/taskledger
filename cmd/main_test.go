@@ -178,20 +178,17 @@ func TestReportCommand(t *testing.T) {
 			t.Error("Report missing GitHub PR link")
 		}
 		// Check for non-feature work grouping (tasks without Jira tickets)
-		if !strings.Contains(output, "• Non-feature work:") {
+		if !strings.Contains(output, "• Non-feature work") {
 			t.Error("Report should include 'Non-feature work' header for tasks without Jira tickets")
 		}
-		// Non-feature work items with empty tickets are grouped under "Misc"
-		if !strings.Contains(output, "◦ Misc") {
-			t.Error("Report should include 'Misc' sub-header for tasks without Jira tickets")
+		// Non-feature work items are now shown as individual sub-entries with first description as header
+		if !strings.Contains(output, "◦ Organized project documentation and created initial README.") {
+			t.Error("Report should include completed task with PR as its own sub-entry under Non-feature work")
 		}
-		if !strings.Contains(output, "▪ Organized project documentation and created initial README.") {
-			t.Error("Report should include completed task that has no Jira ticket under Non-feature work")
+		if !strings.Contains(output, "◦ Updated team wiki with new development processes.") {
+			t.Error("Report should include completed task without PR as its own sub-entry under Non-feature work")
 		}
-		if !strings.Contains(output, "▪ Updated team wiki with new development processes.") {
-			t.Error("Report should include completed task that has no Jira ticket under Non-feature work")
-		}
-		if !strings.Contains(output, "▪ Run linter and fix all warnings") {
+		if !strings.Contains(output, "◦ Run linter and fix all warnings") {
 			t.Error("Report should include next up task that has no Jira ticket under Non-feature work")
 		}
 		// Check for PR links for tasks without Jira tickets
