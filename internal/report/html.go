@@ -18,6 +18,13 @@ const (
 	htmlNonFeatureWorkHeader = `Non-feature work`
 )
 
+// Inline bullet characters used instead of nested <ul> for Slack compatibility.
+// Indentation uses &nbsp; to create visual hierarchy when pasted into Slack.
+const (
+	bulletL2 = `&nbsp;&nbsp;&nbsp;◦ `       // Second-level bullet (descriptions under tickets)
+	bulletL3 = `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- ` // Third-level bullet (descriptions under non-feature sub-entries)
+)
+
 // GenerateHTML creates an HTML version of the report.
 // If preloadedJiraInfo is provided (non-nil), it will be used instead of fetching from JIRA API.
 func GenerateHTML(dates []string, completedTasks map[string][]model.TaskWithDate, nextUpTasks map[string][]model.TaskWithDate, blockedTasks []model.Task, preloadedJiraInfo map[string]jira.TicketInfo) string {
@@ -71,8 +78,8 @@ func collectAllTickets(completed map[string][]model.TaskWithDate, nextUp map[str
 	return allTickets
 }
 
-// renderPRLinksHTML renders a list of PR links as HTML.
-func renderPRLinksHTML(prLinks map[string]bool) string {
+// renderPRLinksInline renders PR links as inline text with a <br/> prefix and bullet character.
+func renderPRLinksInline(prLinks map[string]bool, bullet string) string {
 	if len(prLinks) == 0 {
 		return ""
 	}
@@ -84,14 +91,13 @@ func renderPRLinksHTML(prLinks map[string]bool) string {
 	sort.Strings(links)
 
 	var sb strings.Builder
-	sb.WriteString(`<li>PR(s): `)
+	sb.WriteString(fmt.Sprintf(`<br/>%sPR(s): `, bullet))
 	for i, link := range links {
 		if i > 0 {
 			sb.WriteString("; ")
 		}
 		sb.WriteString(fmt.Sprintf(`<a href="%s">%s</a>`, html.EscapeString(link), html.EscapeString(link)))
 	}
-	sb.WriteString(`</li>`)
 	return sb.String()
 }
 
@@ -111,7 +117,6 @@ func renderCompletedTasksHTML(tasks map[string][]model.TaskWithDate, jiraInfo ma
 
 	for ticket := range tasks {
 		taskList := tasks[ticket]
-		// Check if any task in the group has a PR (for NO-JIRA check)
 		hasPR := false
 		for _, t := range taskList {
 			if t.GithubPR != "" {
@@ -139,21 +144,20 @@ func renderCompletedTasksHTML(tasks map[string][]model.TaskWithDate, jiraInfo ma
 		sb.WriteString(renderTicketEntryHTML(ticket, tasks[ticket], jiraInfo))
 	}
 
-	// Render non-feature work at the end (grouped under "Non-feature work" with sub-entries)
+	// Render non-feature work grouped under "Non-feature work"
 	if len(nonFeatureTickets) > 0 {
 		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, htmlNonFeatureWorkHeader))
-		sb.WriteString(`<ul>`)
 		for _, ticket := range nonFeatureTickets {
 			sb.WriteString(renderNonFeatureSubEntryHTML(ticket, tasks[ticket]))
 		}
-		sb.WriteString(`</ul></li>`)
+		sb.WriteString(`</li>`)
 	}
 
 	sb.WriteString(`</ul>`)
 	return sb.String()
 }
 
-// renderTicketEntryHTML renders a single ticket entry with its descriptions and PRs.
+// renderTicketEntryHTML renders a single ticket entry with descriptions and PRs as inline <br/> items.
 func renderTicketEntryHTML(ticket string, taskList []model.TaskWithDate, jiraInfo map[string]jira.TicketInfo) string {
 	sort.Slice(taskList, func(i, j int) bool {
 		return taskList[i].Date < taskList[j].Date
@@ -172,17 +176,16 @@ func renderTicketEntryHTML(ticket string, taskList []model.TaskWithDate, jiraInf
 		}
 	}
 
-	sb.WriteString(`<ul>`)
 	for _, desc := range descriptions {
-		sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
+		sb.WriteString(fmt.Sprintf(`<br/>%s%s`, bulletL2, html.EscapeString(desc)))
 	}
-	sb.WriteString(renderPRLinksHTML(prLinks))
-	sb.WriteString(`</ul></li>`)
+	sb.WriteString(renderPRLinksInline(prLinks, bulletL2))
+	sb.WriteString(`</li>`)
 
 	return sb.String()
 }
 
-// renderNonFeatureSubEntryHTML renders a non-feature work sub-entry with ticket name as header and descriptions as nested bullets.
+// renderNonFeatureSubEntryHTML renders a non-feature work sub-entry using <br/> for Slack compatibility.
 func renderNonFeatureSubEntryHTML(ticket string, taskList []model.TaskWithDate) string {
 	sort.Slice(taskList, func(i, j int) bool {
 		return taskList[i].Date < taskList[j].Date
@@ -200,22 +203,23 @@ func renderNonFeatureSubEntryHTML(ticket string, taskList []model.TaskWithDate) 
 
 	var sb strings.Builder
 
-	// Use ticket text as the sub-entry header (or "Misc" if empty)
+	// Determine header: for synthetic keys (PR URLs, __noticket_N__), use the first description
 	header := ticket
-	if header == "" {
-		header = "Misc"
-	}
-	sb.WriteString(fmt.Sprintf(`<li>%s`, html.EscapeString(header)))
-
-	if len(descriptions) > 0 || len(prLinks) > 0 {
-		sb.WriteString(`<ul>`)
-		for _, desc := range descriptions {
-			sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(desc)))
+	if IsSyntheticKey(ticket) || header == "" {
+		if len(descriptions) > 0 {
+			header = descriptions[0]
+			descriptions = descriptions[1:]
+		} else {
+			header = "Misc"
 		}
-		sb.WriteString(renderPRLinksHTML(prLinks))
-		sb.WriteString(`</ul>`)
 	}
-	sb.WriteString(`</li>`)
+	sb.WriteString(fmt.Sprintf(`<br/>%s%s`, bulletL2, html.EscapeString(header)))
+
+	sort.Strings(descriptions)
+	for _, desc := range descriptions {
+		sb.WriteString(fmt.Sprintf(`<br/>%s%s`, bulletL3, html.EscapeString(desc)))
+	}
+	sb.WriteString(renderPRLinksInline(prLinks, bulletL3))
 
 	return sb.String()
 }
@@ -236,7 +240,6 @@ func renderNextUpTasksHTML(tasks map[string][]model.TaskWithDate, jiraInfo map[s
 
 	for ticket := range tasks {
 		taskList := tasks[ticket]
-		// Check if any task in the group has a PR (for NO-JIRA check)
 		hasPR := false
 		for _, t := range taskList {
 			if t.GithubPR != "" {
@@ -264,21 +267,20 @@ func renderNextUpTasksHTML(tasks map[string][]model.TaskWithDate, jiraInfo map[s
 		sb.WriteString(renderNextUpTicketEntryHTML(ticket, tasks[ticket], jiraInfo))
 	}
 
-	// Render non-feature work at the end (grouped under "Non-feature work" with sub-entries)
+	// Render non-feature work grouped under "Non-feature work"
 	if len(nonFeatureTickets) > 0 {
 		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, htmlNonFeatureWorkHeader))
-		sb.WriteString(`<ul>`)
 		for _, ticket := range nonFeatureTickets {
 			sb.WriteString(renderNonFeatureNextUpSubEntryHTML(ticket, tasks[ticket]))
 		}
-		sb.WriteString(`</ul></li>`)
+		sb.WriteString(`</li>`)
 	}
 
 	sb.WriteString(`</ul>`)
 	return sb.String()
 }
 
-// renderNextUpTicketEntryHTML renders a single next up ticket entry.
+// renderNextUpTicketEntryHTML renders a single next up ticket entry using inline <br/>.
 func renderNextUpTicketEntryHTML(ticket string, taskList []model.TaskWithDate, jiraInfo map[string]jira.TicketInfo) string {
 	sort.Slice(taskList, func(i, j int) bool {
 		return taskList[i].Date < taskList[j].Date
@@ -307,17 +309,16 @@ func renderNextUpTicketEntryHTML(ticket string, taskList []model.TaskWithDate, j
 		}
 	}
 
-	sb.WriteString(`<ul>`)
 	if mostRecentDesc != "" {
-		sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(mostRecentDesc)))
+		sb.WriteString(fmt.Sprintf(`<br/>%s%s`, bulletL2, html.EscapeString(mostRecentDesc)))
 	}
-	sb.WriteString(renderPRLinksHTML(prLinks))
-	sb.WriteString(`</ul></li>`)
+	sb.WriteString(renderPRLinksInline(prLinks, bulletL2))
+	sb.WriteString(`</li>`)
 
 	return sb.String()
 }
 
-// renderNonFeatureNextUpSubEntryHTML renders a non-feature next up sub-entry.
+// renderNonFeatureNextUpSubEntryHTML renders a non-feature next up sub-entry using <br/>.
 func renderNonFeatureNextUpSubEntryHTML(ticket string, taskList []model.TaskWithDate) string {
 	sort.Slice(taskList, func(i, j int) bool {
 		return taskList[i].Date < taskList[j].Date
@@ -344,21 +345,23 @@ func renderNonFeatureNextUpSubEntryHTML(ticket string, taskList []model.TaskWith
 	}
 
 	var sb strings.Builder
-	header := ticket
-	if header == "" {
-		header = "Misc"
-	}
-	sb.WriteString(fmt.Sprintf(`<li>%s`, html.EscapeString(header)))
 
-	if mostRecentDesc != "" || len(prLinks) > 0 {
-		sb.WriteString(`<ul>`)
+	// Determine header: for synthetic keys, use the upnext description
+	header := ticket
+	if IsSyntheticKey(ticket) || header == "" {
 		if mostRecentDesc != "" {
-			sb.WriteString(fmt.Sprintf(`<li>%s</li>`, html.EscapeString(mostRecentDesc)))
+			header = mostRecentDesc
+			mostRecentDesc = ""
+		} else {
+			header = "Misc"
 		}
-		sb.WriteString(renderPRLinksHTML(prLinks))
-		sb.WriteString(`</ul>`)
 	}
-	sb.WriteString(`</li>`)
+	sb.WriteString(fmt.Sprintf(`<br/>%s%s`, bulletL2, html.EscapeString(header)))
+
+	if mostRecentDesc != "" {
+		sb.WriteString(fmt.Sprintf(`<br/>%s%s`, bulletL3, html.EscapeString(mostRecentDesc)))
+	}
+	sb.WriteString(renderPRLinksInline(prLinks, bulletL3))
 
 	return sb.String()
 }
@@ -388,26 +391,22 @@ func renderBlockedTasksHTML(tasks []model.Task, jiraInfo map[string]jira.TicketI
 	// Render feature work first
 	for _, task := range featureTasks {
 		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, jira.FormatTicketHTML(task.JiraTicket, jiraInfo)))
-		sb.WriteString(`<ul>`)
-		sb.WriteString(fmt.Sprintf(`<li>Blocker: %s</li>`, html.EscapeString(task.Blocker)))
-		sb.WriteString(`</ul></li>`)
+		sb.WriteString(fmt.Sprintf(`<br/>%sBlocker: %s`, bulletL2, html.EscapeString(task.Blocker)))
+		sb.WriteString(`</li>`)
 	}
 
-	// Render non-feature work at the end (grouped under "Non-feature work" with sub-entries)
+	// Render non-feature work grouped under "Non-feature work"
 	if len(nonFeatureTasks) > 0 {
 		sb.WriteString(fmt.Sprintf(`<li><strong>%s</strong>`, htmlNonFeatureWorkHeader))
-		sb.WriteString(`<ul>`)
 		for _, task := range nonFeatureTasks {
 			header := task.JiraTicket
 			if header == "" {
 				header = "Misc"
 			}
-			sb.WriteString(fmt.Sprintf(`<li>%s`, html.EscapeString(header)))
-			sb.WriteString(`<ul>`)
-			sb.WriteString(fmt.Sprintf(`<li>Blocker: %s</li>`, html.EscapeString(task.Blocker)))
-			sb.WriteString(`</ul></li>`)
+			sb.WriteString(fmt.Sprintf(`<br/>%s%s`, bulletL2, html.EscapeString(header)))
+			sb.WriteString(fmt.Sprintf(`<br/>&nbsp;&nbsp;&nbsp;%sBlocker: %s`, bulletL3, html.EscapeString(task.Blocker)))
 		}
-		sb.WriteString(`</ul></li>`)
+		sb.WriteString(`</li>`)
 	}
 
 	sb.WriteString(`</ul>`)

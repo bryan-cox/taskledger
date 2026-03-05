@@ -111,13 +111,6 @@ func printNonFeatureSubEntry(out io.Writer, ticket string, taskList []model.Task
 		return taskList[i].Date < taskList[j].Date
 	})
 
-	// Use ticket text as the sub-entry header (or "Misc" if empty)
-	header := ticket
-	if header == "" {
-		header = "Misc"
-	}
-	fmt.Fprintf(out, "        ◦ %s\n", header)
-
 	// Collect all descriptions and unique PR links
 	var descriptions []string
 	prLinks := make(map[string]bool)
@@ -129,7 +122,20 @@ func printNonFeatureSubEntry(out io.Writer, ticket string, taskList []model.Task
 		}
 	}
 
-	// Print all descriptions (third-level indent)
+	// Determine header: for synthetic keys, use the first description
+	header := ticket
+	if IsSyntheticKey(ticket) || header == "" {
+		if len(descriptions) > 0 {
+			header = descriptions[0]
+			descriptions = descriptions[1:]
+		} else {
+			header = "Misc"
+		}
+	}
+	fmt.Fprintf(out, "        ◦ %s\n", header)
+
+	// Print remaining descriptions (third-level indent), sorted
+	sort.Strings(descriptions)
 	for _, desc := range descriptions {
 		fmt.Fprintf(out, "            ▪ %s\n", desc)
 	}
@@ -249,13 +255,6 @@ func printNonFeatureNextUpSubEntry(out io.Writer, ticket string, taskList []mode
 		return taskList[i].Date < taskList[j].Date
 	})
 
-	// Use ticket text as the sub-entry header (or "Misc" if empty)
-	header := ticket
-	if header == "" {
-		header = "Misc"
-	}
-	fmt.Fprintf(out, "        ◦ %s\n", header)
-
 	// For next up tasks, only use the most recent entry per ticket
 	var mostRecentDesc string
 	prLinks := make(map[string]bool)
@@ -277,6 +276,18 @@ func printNonFeatureNextUpSubEntry(out io.Writer, ticket string, taskList []mode
 			prLinks[taskWithDate.GithubPR] = true
 		}
 	}
+
+	// Determine header: for synthetic keys, use the upnext description or first task description
+	header := ticket
+	if IsSyntheticKey(ticket) || header == "" {
+		if mostRecentDesc != "" {
+			header = mostRecentDesc
+			mostRecentDesc = "" // Don't duplicate as a nested bullet
+		} else {
+			header = "Misc"
+		}
+	}
+	fmt.Fprintf(out, "        ◦ %s\n", header)
 
 	// Print the most recent description (third-level indent)
 	if mostRecentDesc != "" {
