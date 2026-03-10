@@ -108,6 +108,7 @@ func deduplicateDescriptions(descriptions []string) []string {
 	return result
 }
 
+
 // renderPRLinksInline renders PR links as inline text with a <br/> prefix and bullet character.
 func renderPRLinksInline(prLinks map[string]bool, bullet string) string {
 	if len(prLinks) == 0 {
