@@ -88,7 +88,8 @@ func printTicketEntry(out io.Writer, ticket string, taskList []model.TaskWithDat
 		}
 	}
 
-	// Print all descriptions
+	// Print all descriptions (deduplicated)
+	descriptions = deduplicateDescriptions(descriptions)
 	for _, desc := range descriptions {
 		fmt.Fprintf(out, "        ◦ %s\n", desc)
 	}
@@ -134,7 +135,8 @@ func printNonFeatureSubEntry(out io.Writer, ticket string, taskList []model.Task
 	}
 	fmt.Fprintf(out, "        ◦ %s\n", header)
 
-	// Print remaining descriptions (third-level indent), sorted
+	// Print remaining descriptions (third-level indent), deduplicated and sorted
+	descriptions = deduplicateDescriptions(descriptions)
 	sort.Strings(descriptions)
 	for _, desc := range descriptions {
 		fmt.Fprintf(out, "            ▪ %s\n", desc)

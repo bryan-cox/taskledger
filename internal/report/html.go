@@ -78,6 +78,36 @@ func collectAllTickets(completed map[string][]model.TaskWithDate, nextUp map[str
 	return allTickets
 }
 
+// deduplicateDescriptions removes duplicate descriptions and upgrades "Commented on X" to "Reviewed X"
+// when both exist for the same URL.
+func deduplicateDescriptions(descriptions []string) []string {
+	// Track which URLs have been "Reviewed" vs "Commented on"
+	reviewedURLs := make(map[string]bool)
+	for _, desc := range descriptions {
+		if strings.HasPrefix(desc, "Reviewed ") {
+			url := strings.TrimPrefix(desc, "Reviewed ")
+			reviewedURLs[url] = true
+		}
+	}
+
+	seen := make(map[string]bool)
+	var result []string
+	for _, desc := range descriptions {
+		// If "Commented on X" and we also have "Reviewed X", skip the comment
+		if strings.HasPrefix(desc, "Commented on ") {
+			url := strings.TrimPrefix(desc, "Commented on ")
+			if reviewedURLs[url] {
+				continue
+			}
+		}
+		if !seen[desc] {
+			seen[desc] = true
+			result = append(result, desc)
+		}
+	}
+	return result
+}
+
 // renderPRLinksInline renders PR links as inline text with a <br/> prefix and bullet character.
 func renderPRLinksInline(prLinks map[string]bool, bullet string) string {
 	if len(prLinks) == 0 {
@@ -176,6 +206,7 @@ func renderTicketEntryHTML(ticket string, taskList []model.TaskWithDate, jiraInf
 		}
 	}
 
+	descriptions = deduplicateDescriptions(descriptions)
 	for _, desc := range descriptions {
 		sb.WriteString(fmt.Sprintf(`<br/>%s%s`, bulletL2, html.EscapeString(desc)))
 	}
@@ -215,6 +246,7 @@ func renderNonFeatureSubEntryHTML(ticket string, taskList []model.TaskWithDate) 
 	}
 	sb.WriteString(fmt.Sprintf(`<br/>%s%s`, bulletL2, html.EscapeString(header)))
 
+	descriptions = deduplicateDescriptions(descriptions)
 	sort.Strings(descriptions)
 	for _, desc := range descriptions {
 		sb.WriteString(fmt.Sprintf(`<br/>%s%s`, bulletL3, html.EscapeString(desc)))
