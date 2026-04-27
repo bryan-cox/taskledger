@@ -1,6 +1,6 @@
 ---
 description: Generate HTML work report and open in browser
-argument-hint: "[--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--output PATH]"
+argument-hint: "[--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--output PATH] [--obsidian]"
 ---
 
 ## Name
@@ -8,7 +8,7 @@ taskledger:html-report
 
 ## Synopsis
 ```
-/taskledger:html-report [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--output PATH]
+/taskledger:html-report [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--output PATH] [--obsidian]
 ```
 
 ## Description
@@ -35,12 +35,54 @@ Execute the following workflow step by step:
    - `--start-date YYYY-MM-DD`: Start of date range (defaults to today)
    - `--end-date YYYY-MM-DD`: End of date range (defaults to today)
    - `--output PATH`: Path for the generated HTML file (defaults to `weekly-report.html`)
+   - `--obsidian`: Read tasks from Obsidian daily notes at `~/Red Hat/Work log/YYYY/MM/YYYY-MM-DD.md` for the date range instead of worklog.yaml. Parses markdown format and writes a temp worklog.yaml to `/tmp/obsidian-worklog.yaml` for use by the TaskLedger binary.
 
 2. Validate date formats if provided (must be YYYY-MM-DD)
 
 3. Store all parsed values for later use
 
-### Phase 2: Validate Prerequisites
+### Phase 2: Obsidian Parsing Phase (only when --obsidian is passed)
+
+1. For each date from `start-date` to `end-date` (inclusive), attempt to read the Obsidian daily note at:
+   ```
+   ~/Red Hat/Work log/{YYYY}/{MM}/{YYYY-MM-DD}.md
+   ```
+   Skip dates where the file does not exist.
+
+2. For each note that exists, parse it using the following format rules:
+   - Task sections are `### ` headings found under the `## 🦀 Work` section
+   - Skip the `### Code Reviews` section entirely
+   - Task heading format:
+     - With JIRA ticket: `### JIRA-123 · Title`
+     - Without JIRA ticket: `### Title`
+   - Within each task section, look for these fields:
+     - `**JIRA:**` — the JIRA ticket ID (if not already in heading)
+     - `**PR:**` — GitHub PR URL
+     - `**Status:**` — either `In Progress` or `Completed`
+     - Bullet lines starting with `- ` — description items
+     - `**Next:**` — the upnext/next steps description
+   - Convert status values: `In Progress` → `"in progress"`, `Completed` → `"completed"`
+
+3. Convert all parsed tasks across all dates into worklog.yaml format:
+   ```yaml
+   "YYYY-MM-DD":
+     tasks:
+       - jira_ticket: "PROJ-123"
+         description: "First bullet description"
+         descriptions:
+           - "Second bullet description"
+         status: "completed"
+         github_pr: "https://github.com/..."
+         upnext_description: "Next steps text"
+   ```
+   - Use `description` for the first bullet, `descriptions` (list) for any additional bullets
+   - Omit fields that are empty or not present
+
+4. Write the resulting YAML to `/tmp/obsidian-worklog.yaml` using the Write tool
+
+5. Set `FILE_PATH = /tmp/obsidian-worklog.yaml` for use in all subsequent phases
+
+### Phase 3: Validate Prerequisites
 
 1. Check that the TaskLedger binary exists at `~/bryan-cox/taskledger/bin/taskledger`:
    ```bash
@@ -62,7 +104,7 @@ Execute the following workflow step by step:
    Please check the file path or create a worklog file.
    ```
 
-### Phase 3: Fetch JIRA Ticket Summaries
+### Phase 4: Fetch JIRA Ticket Summaries
 
 1. Use Grep to extract only the `jira_ticket` lines from the worklog file for the specified date range:
    ```bash
@@ -101,7 +143,7 @@ Execute the following workflow step by step:
 
 5. Write the JSON to a temporary file at `/tmp/jira-summaries.json` using the Write tool
 
-### Phase 4: Build and Execute Command
+### Phase 5: Build and Execute Command
 
 1. Construct the TaskLedger command with all arguments:
    ```bash
@@ -114,13 +156,13 @@ Execute the following workflow step by step:
      --jira-summaries /tmp/jira-summaries.json
    ```
 
-   Note: Omit `--jira-summaries` if Phase 3 was skipped (JIRA MCP unavailable)
+   Note: Omit `--jira-summaries` if Phase 4 was skipped (JIRA MCP unavailable)
 
 2. Execute the command using the Bash tool
 
 3. Capture the output for reporting
 
-### Phase 5: Report Results
+### Phase 6: Report Results
 
 1. If successful, inform the user:
    ```
@@ -181,6 +223,7 @@ Execute the following workflow step by step:
 - `--start-date` *(optional)*: Start of date range in YYYY-MM-DD format. Defaults to today.
 - `--end-date` *(optional)*: End of date range in YYYY-MM-DD format. Defaults to today.
 - `--output` *(optional)*: Path for the generated HTML file. Defaults to `weekly-report.html` in the current directory.
+- `--obsidian` *(optional)*: Read tasks from Obsidian daily notes at `~/Red Hat/Work log/YYYY/MM/YYYY-MM-DD.md` for the date range instead of worklog.yaml. Parses markdown format and writes a temp worklog.yaml to `/tmp/obsidian-worklog.yaml` for use by the TaskLedger binary.
 
 ## See Also
 

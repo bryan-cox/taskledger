@@ -1,6 +1,6 @@
 ---
 description: Post work report comments to JIRA tickets from worklog.yml
-argument-hint: "[--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run]"
+argument-hint: "[--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run] [--obsidian]"
 ---
 
 ## Name
@@ -8,7 +8,7 @@ taskledger:update-jira
 
 ## Synopsis
 ```
-/taskledger:update-jira [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run]
+/taskledger:update-jira [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run] [--obsidian]
 ```
 
 ## Description
@@ -34,12 +34,54 @@ Execute the following workflow step by step:
    - `--start-date YYYY-MM-DD`: Start of date range (defaults to today)
    - `--end-date YYYY-MM-DD`: End of date range (defaults to today)
    - `--dry-run`: Preview mode - show what would be posted without actually posting
+   - `--obsidian`: Read tasks from Obsidian daily notes at `~/Red Hat/Work log/YYYY/MM/YYYY-MM-DD.md` for the date range instead of worklog.yaml. Parses markdown format and writes a temp worklog.yaml to `/tmp/obsidian-worklog.yaml` for use by the TaskLedger binary.
 
 2. Validate date formats if provided (must be YYYY-MM-DD)
 
 3. Store the file path and dry-run flag for later use
 
-### Phase 2: Load and Parse worklog.yml
+### Phase 2: Obsidian Parsing Phase (only when --obsidian is passed)
+
+1. For each date from `start-date` to `end-date` (inclusive), attempt to read the Obsidian daily note at:
+   ```
+   ~/Red Hat/Work log/{YYYY}/{MM}/{YYYY-MM-DD}.md
+   ```
+   Skip dates where the file does not exist.
+
+2. For each note that exists, parse it using the following format rules:
+   - Task sections are `### ` headings found under the `## 🦀 Work` section
+   - Skip the `### Code Reviews` section entirely
+   - Task heading format:
+     - With JIRA ticket: `### JIRA-123 · Title`
+     - Without JIRA ticket: `### Title`
+   - Within each task section, look for these fields:
+     - `**JIRA:**` — the JIRA ticket ID (if not already in heading)
+     - `**PR:**` — GitHub PR URL
+     - `**Status:**` — either `In Progress` or `Completed`
+     - Bullet lines starting with `- ` — description items
+     - `**Next:**` — the upnext/next steps description
+   - Convert status values: `In Progress` → `"in progress"`, `Completed` → `"completed"`
+
+3. Convert all parsed tasks across all dates into worklog.yaml format:
+   ```yaml
+   "YYYY-MM-DD":
+     tasks:
+       - jira_ticket: "PROJ-123"
+         description: "First bullet description"
+         descriptions:
+           - "Second bullet description"
+         status: "completed"
+         github_pr: "https://github.com/..."
+         upnext_description: "Next steps text"
+   ```
+   - Use `description` for the first bullet, `descriptions` (list) for any additional bullets
+   - Omit fields that are empty or not present
+
+4. Write the resulting YAML to `/tmp/obsidian-worklog.yaml` using the Write tool
+
+5. Set `FILE_PATH = /tmp/obsidian-worklog.yaml` for use in all subsequent phases
+
+### Phase 3: Load and Parse worklog.yml
 
 1. Read the worklog.yml file from the specified path (or current directory if not specified) using the Read tool
 
@@ -66,7 +108,7 @@ Execute the following workflow step by step:
    No tasks found in worklog.yml for the date range {start-date} to {end-date}.
    ```
 
-### Phase 3: Categorize Tasks by JIRA Ticket
+### Phase 4: Categorize Tasks by JIRA Ticket
 
 1. Create a map of jira_ticket -> list of tasks across all dates in range
 
@@ -83,7 +125,7 @@ Execute the following workflow step by step:
    - If it's already a ticket ID like `PROJ-123`, use it directly
    - Pattern: look for `[A-Z]+-\d+` format
 
-### Phase 4: Generate Comment Content per Ticket
+### Phase 5: Generate Comment Content per Ticket
 
 For each unique JIRA ticket, generate a comment in Jira wiki markup format:
 
@@ -113,7 +155,7 @@ Rules for formatting:
 - Do NOT include task status (JIRA has its own status field)
 - Use proper Jira wiki link syntax: `[Display Text|URL]`
 
-### Phase 5: Check for Duplicate Comments
+### Phase 6: Check for Duplicate Comments
 
 For each ticket that will be updated:
 
@@ -130,7 +172,7 @@ For each ticket that will be updated:
 
 3. If a duplicate is found, mark the ticket as having an existing comment
 
-### Phase 6: Preview and Confirmation
+### Phase 7: Preview and Confirmation
 
 Display a summary to the user:
 
@@ -165,7 +207,7 @@ Dry run complete. No comments were posted.
 To post comments, run without --dry-run flag.
 ```
 
-### Phase 7: Post Comments
+### Phase 8: Post Comments
 
 If user confirms with "yes" or "all":
 
@@ -247,6 +289,7 @@ If user confirms with "yes" or "all":
 - `--start-date` *(optional)*: Start of date range in YYYY-MM-DD format. Defaults to today.
 - `--end-date` *(optional)*: End of date range in YYYY-MM-DD format. Defaults to today.
 - `--dry-run` *(optional)*: Preview mode. Shows what would be posted without actually posting to JIRA.
+- `--obsidian` *(optional)*: Read tasks from Obsidian daily notes at `~/Red Hat/Work log/YYYY/MM/YYYY-MM-DD.md` for the date range instead of worklog.yaml. Parses markdown format and writes a temp worklog.yaml to `/tmp/obsidian-worklog.yaml` for use by the TaskLedger binary.
 
 ## See Also
 
