@@ -1,6 +1,6 @@
 ---
 description: Post work report comments to JIRA tickets from worklog.yml
-argument-hint: "[--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run] [--obsidian]"
+argument-hint: "[--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run]"
 ---
 
 ## Name
@@ -8,7 +8,7 @@ taskledger:update-jira
 
 ## Synopsis
 ```
-/taskledger:update-jira [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run] [--obsidian]
+/taskledger:update-jira [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--dry-run]
 ```
 
 ## Description
@@ -30,17 +30,18 @@ Execute the following workflow step by step:
 ### Phase 1: Parse Arguments
 
 1. Extract optional arguments from $ARGUMENTS:
-   - `--file PATH`: Path to worklog.yml file (defaults to `./worklog.yml` in current directory)
+   - `--file PATH`: Explicit path to a worklog.yml file. When provided, skips Obsidian parsing and uses this file directly (old behavior). Overrides default Obsidian parsing.
    - `--start-date YYYY-MM-DD`: Start of date range (defaults to today)
    - `--end-date YYYY-MM-DD`: End of date range (defaults to today)
    - `--dry-run`: Preview mode - show what would be posted without actually posting
-   - `--obsidian`: Read tasks from Obsidian daily notes at `~/Red Hat/Work log/YYYY/MM/YYYY-MM-DD.md` for the date range instead of worklog.yaml. Parses markdown format and writes a temp worklog.yaml to `/tmp/obsidian-worklog.yaml` for use by the TaskLedger binary.
 
 2. Validate date formats if provided (must be YYYY-MM-DD)
 
 3. Store the file path and dry-run flag for later use
 
-### Phase 2: Obsidian Parsing Phase (only when --obsidian is passed)
+4. If `--file` is NOT provided, Obsidian parsing is the default behavior (proceed to Phase 2). If `--file` IS provided, skip Phase 2 and proceed directly to Phase 3 using the supplied path.
+
+### Phase 2: Obsidian Parsing Phase (default; skipped when --file is provided)
 
 1. For each date from `start-date` to `end-date` (inclusive), attempt to read the Obsidian daily note at:
    ```
@@ -83,7 +84,10 @@ Execute the following workflow step by step:
 
 ### Phase 3: Load and Parse worklog.yml
 
-1. Read the worklog.yml file from the specified path (or current directory if not specified) using the Read tool
+1. Read the worklog.yml file from:
+   - The path supplied via `--file` (when provided), OR
+   - `/tmp/obsidian-worklog.yaml` (written by Phase 2 when using default Obsidian parsing)
+   Use the Read tool.
 
 2. Parse the YAML content. The structure is:
    ```yaml
@@ -285,11 +289,10 @@ If user confirms with "yes" or "all":
 
 ## Arguments
 
-- `--file` *(optional)*: Path to the worklog.yml file. Defaults to `./worklog.yml` in the current directory. Can be an absolute or relative path.
+- `--file` *(optional)*: Explicit path to a worklog.yml file. When provided, skips Obsidian parsing and uses this file directly. Can be an absolute or relative path. If omitted, Obsidian daily notes are parsed by default.
 - `--start-date` *(optional)*: Start of date range in YYYY-MM-DD format. Defaults to today.
 - `--end-date` *(optional)*: End of date range in YYYY-MM-DD format. Defaults to today.
 - `--dry-run` *(optional)*: Preview mode. Shows what would be posted without actually posting to JIRA.
-- `--obsidian` *(optional)*: Read tasks from Obsidian daily notes at `~/Red Hat/Work log/YYYY/MM/YYYY-MM-DD.md` for the date range instead of worklog.yaml. Parses markdown format and writes a temp worklog.yaml to `/tmp/obsidian-worklog.yaml` for use by the TaskLedger binary.
 
 ## See Also
 

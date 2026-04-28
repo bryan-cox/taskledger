@@ -1,6 +1,6 @@
 ---
 description: Generate HTML work report and open in browser
-argument-hint: "[--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--output PATH] [--obsidian]"
+argument-hint: "[--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--output PATH]"
 ---
 
 ## Name
@@ -8,7 +8,7 @@ taskledger:html-report
 
 ## Synopsis
 ```
-/taskledger:html-report [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--output PATH] [--obsidian]
+/taskledger:html-report [--file PATH] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--output PATH]
 ```
 
 ## Description
@@ -31,17 +31,20 @@ Execute the following workflow step by step:
 ### Phase 1: Parse Arguments
 
 1. Extract optional arguments from $ARGUMENTS:
-   - `--file PATH`: Path to worklog.yml file (defaults to `~/worklog/worklog.yaml`)
+   - `--file PATH`: Override — path to an explicit worklog.yml file. When provided, skip Obsidian parsing entirely and use this file directly.
    - `--start-date YYYY-MM-DD`: Start of date range (defaults to today)
    - `--end-date YYYY-MM-DD`: End of date range (defaults to today)
    - `--output PATH`: Path for the generated HTML file (defaults to `weekly-report.html`)
-   - `--obsidian`: Read tasks from Obsidian daily notes at `~/Red Hat/Work log/YYYY/MM/YYYY-MM-DD.md` for the date range instead of worklog.yaml. Parses markdown format and writes a temp worklog.yaml to `/tmp/obsidian-worklog.yaml` for use by the TaskLedger binary.
 
 2. Validate date formats if provided (must be YYYY-MM-DD)
 
-3. Store all parsed values for later use
+3. Determine the worklog source:
+   - If `--file PATH` was provided: set `FILE_PATH = {PATH}` and skip Phase 2 (Obsidian parsing)
+   - Otherwise: proceed to Phase 2 to parse Obsidian daily notes
 
-### Phase 2: Obsidian Parsing Phase (only when --obsidian is passed)
+4. Store all parsed values for later use
+
+### Phase 2: Obsidian Parsing Phase (default; skipped when --file is provided)
 
 1. For each date from `start-date` to `end-date` (inclusive), attempt to read the Obsidian daily note at:
    ```
@@ -199,11 +202,11 @@ Execute the following workflow step by step:
    ```
    Generates a report for the specified date range.
 
-3. **Generate report with custom worklog file**:
+3. **Generate report with an explicit worklog file (skips Obsidian parsing)**:
    ```
    /html-report --file ~/my-worklog/work.yaml
    ```
-   Uses a worklog file from a different location.
+   Uses the provided worklog file directly, bypassing Obsidian daily note parsing.
 
 4. **Generate report with custom output path**:
    ```
@@ -211,19 +214,18 @@ Execute the following workflow step by step:
    ```
    Saves the report to a specific location.
 
-5. **Full example with all options**:
+5. **Full example with all options (explicit file override)**:
    ```
    /html-report --file ~/worklog/worklog.yaml --start-date 2025-12-18 --end-date 2026-01-06 --output weekly-report.html
    ```
-   Generates a report with all options explicitly specified.
+   Generates a report with all options explicitly specified, using the provided worklog file instead of Obsidian parsing.
 
 ## Arguments
 
-- `--file` *(optional)*: Path to the worklog.yml file. Defaults to `~/worklog/worklog.yaml`. Can be an absolute or relative path.
+- `--file` *(optional override)*: Path to an explicit worklog.yml file. When provided, Obsidian parsing is skipped and this file is used directly. Can be an absolute or relative path.
 - `--start-date` *(optional)*: Start of date range in YYYY-MM-DD format. Defaults to today.
 - `--end-date` *(optional)*: End of date range in YYYY-MM-DD format. Defaults to today.
 - `--output` *(optional)*: Path for the generated HTML file. Defaults to `weekly-report.html` in the current directory.
-- `--obsidian` *(optional)*: Read tasks from Obsidian daily notes at `~/Red Hat/Work log/YYYY/MM/YYYY-MM-DD.md` for the date range instead of worklog.yaml. Parses markdown format and writes a temp worklog.yaml to `/tmp/obsidian-worklog.yaml` for use by the TaskLedger binary.
 
 ## See Also
 
