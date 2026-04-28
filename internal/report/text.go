@@ -137,7 +137,7 @@ func printNonFeatureSubEntry(out io.Writer, ticket string, taskList []model.Task
 
 	// Print remaining descriptions (third-level indent), deduplicated and sorted
 	descriptions = deduplicateDescriptions(descriptions)
-	sort.Strings(descriptions)
+	sortDescriptions(descriptions)
 	for _, desc := range descriptions {
 		fmt.Fprintf(out, "            ▪ %s\n", desc)
 	}

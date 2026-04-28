@@ -108,6 +108,27 @@ func deduplicateDescriptions(descriptions []string) []string {
 	return result
 }
 
+// sortDescriptions sorts descriptions so that "Reviewed" entries always appear before
+// "Commented on" entries. Within each group, entries are sorted alphabetically.
+func sortDescriptions(descriptions []string) {
+	sort.Slice(descriptions, func(i, j int) bool {
+		iReviewed := strings.HasPrefix(descriptions[i], "Reviewed ")
+		jReviewed := strings.HasPrefix(descriptions[j], "Reviewed ")
+		iCommented := strings.HasPrefix(descriptions[i], "Commented on ")
+		jCommented := strings.HasPrefix(descriptions[j], "Commented on ")
+
+		// "Reviewed" before "Commented on"
+		if iReviewed && jCommented {
+			return true
+		}
+		if iCommented && jReviewed {
+			return false
+		}
+		// Within the same group, sort alphabetically
+		return descriptions[i] < descriptions[j]
+	})
+}
+
 
 // renderPRLinksInline renders PR links as inline text with a <br/> prefix and bullet character.
 func renderPRLinksInline(prLinks map[string]bool, bullet string) string {
@@ -248,7 +269,7 @@ func renderNonFeatureSubEntryHTML(ticket string, taskList []model.TaskWithDate) 
 	sb.WriteString(fmt.Sprintf(`<br/>%s%s`, bulletL2, html.EscapeString(header)))
 
 	descriptions = deduplicateDescriptions(descriptions)
-	sort.Strings(descriptions)
+	sortDescriptions(descriptions)
 	for _, desc := range descriptions {
 		sb.WriteString(fmt.Sprintf(`<br/>%s%s`, bulletL3, html.EscapeString(desc)))
 	}
